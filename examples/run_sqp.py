@@ -1,6 +1,6 @@
 import jax
 import jax.numpy as jnp
-import dilqr
+import idoc
 from absl import app
 
 
@@ -9,7 +9,7 @@ def init_theta(key, dim):
     c = jnp.ones((dim,))
     E = jax.random.normal(key, (dim, dim))
     d = jnp.ones((dim,))
-    return dilqr.qp.QP(Q, c, E, d)
+    return idoc.qp.QP(Q, c, E, d)
 
 
 def init_state(key, dim):
@@ -19,26 +19,26 @@ def init_state(key, dim):
 
 
 def init_nonlinear_sqp():
-    def f(z, p: dilqr.qp.QP):
+    def f(z, p: idoc.qp.QP):
         h = jax.nn.relu(z)
         return 0.5 * jnp.dot(jnp.dot(p.Q, h), h) + (jnp.dot(p.c, h) ** 2)
 
-    def g(z, p: dilqr.qp.QP):
+    def g(z, p: idoc.qp.QP):
         E, d = p.E, p.d
         return (jnp.dot(E, z) - d) ** 2 + (z ** 2)
 
-    return dilqr.sqp.SQP(f=f, g=g)
+    return idoc.sqp.SQP(f=f, g=g)
 
 
 def init_linear_sqp():
-    def f(z, p: dilqr.qp.QP):
+    def f(z, p: idoc.qp.QP):
         return 0.5 * jnp.dot(jnp.dot(p.Q, z), z) + jnp.dot(p.c, z)
 
-    def g(z, p: dilqr.qp.QP):
+    def g(z, p: idoc.qp.QP):
         E, d = p.E, p.d
         return jnp.dot(E, z) - d
 
-    return dilqr.sqp.SQP(f=f, g=g)
+    return idoc.sqp.SQP(f=f, g=g)
 
 
 def main(argv):
@@ -47,7 +47,7 @@ def main(argv):
     iterations = 100
 
     for sqp in [init_linear_sqp(), init_nonlinear_sqp()]:
-        direct_solver, kkt, implicit_solver = dilqr.sqp.build(sqp, iterations)
+        direct_solver, kkt, implicit_solver = idoc.sqp.build(sqp, iterations)
 
         def _loss(z, nu):
             return jnp.sum(z ** 2) + jnp.sum(nu ** 2)

@@ -1,11 +1,11 @@
-import dilqr
+import idoc
 import jax
 import jax.numpy as jnp
 from absl import app
 from typing import Callable
 
 
-def lqr_cost(X, U, theta: dilqr.lqr.Params):
+def lqr_cost(X, U, theta: idoc.lqr.Params):
     Q = theta.lqr.Q
     x0 = theta.x0
     lq = jnp.sum(X * jnp.dot(X, Q)) + jnp.sum(x0 * jnp.dot(Q, x0))
@@ -20,7 +20,7 @@ def init_stable(key, state_dim):
     return 0.5 * A
 
 
-def init_lqr(key, state_dim: int, control_dim: int, horizon: int) -> dilqr.lqr.LQR:
+def init_lqr(key, state_dim: int, control_dim: int, horizon: int) -> idoc.lqr.LQR:
     """Initialize a random LQR spec."""
     Q = jnp.stack(horizon * (jnp.eye(state_dim),))
     q = 0.2 * jnp.stack(horizon * (jnp.ones(state_dim),))
@@ -34,19 +34,19 @@ def init_lqr(key, state_dim: int, control_dim: int, horizon: int) -> dilqr.lqr.L
     key, subkey = jax.random.split(key)
     B = jnp.stack(horizon * (jax.random.normal(subkey, (state_dim, control_dim)),))
     d = jnp.stack(horizon * (jnp.ones(state_dim),))
-    return dilqr.lqr.LQR(Q=Q, q=q, Qf=Qf, qf=qf, R=R, r=r, A=A, B=B, d=d, M=M)
+    return idoc.lqr.LQR(Q=Q, q=q, Qf=Qf, qf=qf, R=R, r=r, A=A, B=B, d=d, M=M)
 
 
-def init_params(key, state_dim, control_dim, horizon) -> dilqr.lqr.Params:
+def init_params(key, state_dim, control_dim, horizon) -> idoc.lqr.Params:
     """Initialize random parameters."""
     key, subkey = jax.random.split(key)
     x0 = jax.random.normal(subkey, (state_dim,))
     key, subkey = jax.random.split(key)
     lqr = init_lqr(subkey, state_dim, control_dim, horizon)
-    return dilqr.lqr.Params(x0, lqr)
+    return idoc.lqr.Params(x0, lqr)
 
 
-def check_kkt(kkt: Callable, s: dilqr.typs.State, params: dilqr.lqr.Params) -> None:
+def check_kkt(kkt: Callable, s: idoc.typs.State, params: idoc.lqr.Params) -> None:
     kkt_state = kkt(s, params)
     print(f"dLdX: {jnp.mean(jnp.abs(kkt_state.X))}")
     print(f"dLdU: {jnp.mean(jnp.abs(kkt_state.U))}")
@@ -59,7 +59,7 @@ def main(argv):
     # random key
     key = jax.random.PRNGKey(42)
     # initialize solvers
-    solve_direct, kkt, solve_implicit = dilqr.lqr.build(T)
+    solve_direct, kkt, solve_implicit = idoc.lqr.build(T)
     # initialize parameters
     theta = init_params(key, state_dim, control_dim, T)
     # check that both solvers give the same solution

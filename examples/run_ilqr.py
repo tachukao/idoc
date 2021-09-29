@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 import jax
 from flax import struct
-import dilqr
+import idoc
 from typing import Callable
 from absl import app
 
@@ -34,7 +34,7 @@ def init_theta(key, state_dim, control_dim) -> Params:
 
 def init_ilqr_problem(
     state_dim: int, control_dim: int, horizon: int
-) -> dilqr.ilqr.Problem:
+) -> idoc.ilqr.Problem:
     def dynamics(_, x, u, theta):
         return jnp.tanh(theta.A @ x) + theta.B @ u + 0.5
 
@@ -47,7 +47,7 @@ def init_ilqr_problem(
     def costf(xf, theta):
         return 0.5 * jnp.dot(jnp.dot(theta.Qf, xf), xf)
 
-    return dilqr.ilqr.Problem(
+    return idoc.ilqr.Problem(
         cost=cost,
         costf=costf,
         dynamics=dynamics,
@@ -57,16 +57,16 @@ def init_ilqr_problem(
     )
 
 
-def init_params(key, state_dim, control_dim) -> dilqr.ilqr.Params:
+def init_params(key, state_dim, control_dim) -> idoc.ilqr.Params:
     """Initialize random parameters."""
     key, subkey = jax.random.split(key)
     x0 = jax.random.normal(subkey, (state_dim,))
     key, subkey = jax.random.split(key)
     theta = init_theta(subkey, state_dim, control_dim)
-    return dilqr.ilqr.Params(x0, theta=theta)
+    return idoc.ilqr.Params(x0, theta=theta)
 
 
-def check_kkt(kkt: Callable, s: dilqr.typs.State, theta: Params) -> None:
+def check_kkt(kkt: Callable, s: idoc.typs.State, theta: Params) -> None:
     kkt_state = kkt(s, theta)
     print(f"dLdX: {jnp.mean(jnp.abs(kkt_state.X))}")
     print(f"dLdU: {jnp.mean(jnp.abs(kkt_state.U))}")
@@ -81,7 +81,7 @@ def main(argv):
     # initialize ilqr
     ilqr_problem = init_ilqr_problem(state_dim, control_dim, T)
     # initialize solvers
-    solve_direct, kkt, solve_implicit, simulate = dilqr.ilqr.build(
+    solve_direct, kkt, solve_implicit, simulate = idoc.ilqr.build(
         ilqr_problem, iterations
     )
     # initialize parameters
