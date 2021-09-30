@@ -2,7 +2,6 @@
 """
 import jax
 import jax.numpy as jnp
-import jax.ops as jo
 import flax
 from jaxopt import implicit_diff
 from . import typs
@@ -24,7 +23,7 @@ dloss = jax.grad(loss)
 
 def feasibility(z, theta):
     E, d = theta.E, theta.d
-    return jnp.dot(E, z) - d
+    return E @ z - d
 
 
 def kkt(x, theta):
@@ -37,6 +36,7 @@ def kkt(x, theta):
 
 def _direct_solver(_, theta):
     Q, c, E, d = theta.Q, theta.c, theta.E, theta.d
+    Q = 0.5 * (Q + Q.T)
 
     A1 = jnp.concatenate((Q, E.T), axis=1)
     A2 = jnp.concatenate((E, jnp.zeros((E.shape[0], E.shape[0]))), axis=1)

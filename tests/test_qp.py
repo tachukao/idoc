@@ -29,12 +29,29 @@ def test_qp():
     subkey, key = jax.random.split(key)
     dim = 3
     theta = init_theta(subkey, dim)
+
+    print("KKT")
+    print(idoc.qp.kkt(idoc.qp.solver.direct(theta), theta))
+    print(idoc.qp.kkt(idoc.qp.solver.implicit(theta), theta))
     direct = jax.grad(direct_loss)(theta)
     implicit = jax.grad(implicit_loss)(theta)
-    assert idoc.utils.relative_difference(direct.Q, implicit.Q)
-    assert idoc.utils.relative_difference(direct.c, implicit.c)
-    assert idoc.utils.relative_difference(direct.E, implicit.E)
-    assert idoc.utils.relative_difference(direct.d, implicit.d)
+
+    pc = idoc.utils.print_and_check
+    rd = idoc.utils.relative_difference
+
+    print("Implicit v Finite Difference")
+    findiff = idoc.utils.finite_difference_grad(lambda theta: direct_loss(theta), theta)
+
+    pc(rd(implicit.Q, findiff.Q))
+    pc(rd(implicit.c, findiff.c))
+    pc(rd(implicit.d, findiff.d))
+    pc(rd(implicit.E, findiff.E))
+
+    print("Direct v Implicit")
+    pc(rd(direct.Q, implicit.Q))
+    pc(rd(direct.c, implicit.c))
+    pc(rd(direct.d, implicit.d))
+    pc(rd(direct.E, implicit.E))
 
 
 if __name__ == "__main__":

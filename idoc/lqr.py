@@ -130,25 +130,26 @@ def kkt(s: typs.State, params: Params) -> typs.State:
     return typs.State(X=dLdX, U=dLdU, Nu=dLdNu)
 
 
+def forward(lqr: LQR, x0: jnp.ndarray, gains: Gains):
+    A, B, d = lqr.A, lqr.B, lqr.d
+
+    def dyn(x, inps):
+        A, B, d, gain = inps
+        u = gain.K @ x + gain.k
+        nx = A @ x + B @ u + d
+        return nx, (nx, u)
+
+    _, (X, U) = lax.scan(dyn, x0, (A, B, d, gains))
+    return X, U
+
+
 def build(horizon: int) -> typs.Solver:
     """Build an LQR differentiable solver"""
 
-    def direct(_, theta: Params):
-        x0, lqr = theta.x0, theta.lqr.symm()
-        A, B, d = lqr.A, lqr.B, lqr.d
-
-        def forward(x0: jnp.ndarray, gains: Gains):
-            def dyn(x, inps):
-                A, B, d, gain = inps
-                u = gain.K @ x + gain.k
-                nx = A @ x + B @ u + d
-                return nx, (nx, u)
-
-            _, (X, U) = lax.scan(dyn, x0, (A, B, d, gains))
-            return X, U
-
+    def direct(_, params: Params):
+        x0, lqr = params.x0, params.lqr.symm()
         gains = backward(lqr, horizon)
-        X, U = forward(x0, gains)
+        X, U = forward(lqr, x0, gains)
         Nu = adjoint(X, U, lqr, horizon)
         return typs.State(X, U, Nu)
 

@@ -36,13 +36,13 @@ def make_lqr_approx(cs: Problem, params: Params, flag=False) -> Callable:
 
     @jax.vmap
     def approx_timestep(t, x, u):
-        M = jax.jacfwd(jax.grad(cs.cost, argnums=2), argnums=1)(t, x, u, theta).T
+        M = jax.jacfwd(jax.grad(cs.cost, argnums=1), argnums=2)(t, x, u, theta)
         Q = jax.jacfwd(jax.grad(cs.cost, argnums=1), argnums=1)(t, x, u, theta)
         R = jax.jacfwd(jax.grad(cs.cost, argnums=2), argnums=2)(t, x, u, theta)
         q, r = jax.grad(cs.cost, argnums=(1, 2))(t, x, u, theta)
         if flag:
-            q = q - Q @ x - M @ u
-            r = r - R @ u - M.T @ x
+            q = q - (Q @ x + M @ u)
+            r = r - (R @ u + M.T @ x)
         A, B = jax.jacobian(cs.dynamics, argnums=(1, 2))(t, x, u, theta)
         return Q, q, R, r, M, A, B
 
@@ -112,33 +112,25 @@ def build(cs: Problem, iterations: int):
         init: typs.State,
         params: Params,
     ) -> typs.State:
-        x0 = params.x0
-        assert x0.ndim == 1 and x0.shape[0] == cs.state_dim
-        assert init.U.ndim > 0 and init.U.shape[0] == cs.horizon
         lqr_approx = make_lqr_approx(cs, params, False)
 
         def loop(z, _):
             X, U = z
-            gains = lqr.backward(lqr_approx(X, U), T)
+            p = lqr_approx(X, U)
+            gains = lqr.backward(p, T)
             nX, nU, l = update(X, U, gains, params)
             return (nX, nU), l
 
         (X, U), L = lax.scan(loop, (init.X, init.U), jnp.arange(iterations))
-        print(L)
         lqr_approx = make_lqr_approx(cs, params, True)
-        Nu = lqr.adjoint(X, U, lqr_approx(X, U), T)
+        p = lqr_approx(X, U)
+        Nu = lqr.adjoint(X, U, p, T)
         return typs.State(X=X, U=U, Nu=Nu)
 
     implicit_ilqr = implicit_diff.custom_root(kkt)(ilqr)
 
-    def solve(ilqr, U, params):
-        assert U.shape == (T, cs.control_dim)
-        X = simulate(cs, U, params)
-        Nu = jnp.zeros_like(X)
-        return ilqr(typs.State(X=X, U=U, Nu=Nu), params)
-
     return typs.Solver(
-        direct=functools.partial(solve, ilqr),
+        direct=ilqr,
         kkt=kkt,
-        implicit=functools.partial(solve, implicit_ilqr),
+        implicit=implicit_ilqr,
     )

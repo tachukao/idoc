@@ -1,6 +1,8 @@
 import jax
 import jax.numpy as jnp
 from typing import Callable, Any
+from jax import flatten_util
+import scipy
 from . import typs
 
 
@@ -30,3 +32,22 @@ def relative_difference(z1, z2):
     az2 = jnp.abs(z2)
     err = jnp.mean(jnp.abs(z1 - z2) / (az1 + az2 + 1e-9))
     return err
+
+
+def print_and_check(err, thres=1e-4):
+
+    print(err)
+    assert err < thres
+
+
+def finite_difference_grad(f, x, eps=1e-8):
+    flat_x, unravel = flatten_util.ravel_pytree(x)
+
+    def flat_f(flat_theta):
+        theta = unravel(flat_theta)
+        return f(theta)
+
+    d = jnp.ones_like(flat_x) * eps
+    flat_g = scipy.optimize.approx_fprime(flat_x, flat_f, d)
+    g = unravel(flat_g)
+    return g

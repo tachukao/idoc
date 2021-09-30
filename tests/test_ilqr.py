@@ -60,7 +60,7 @@ def init_params(key, state_dim, control_dim) -> idoc.ilqr.Params:
 def test_ilqr():
     jax.config.update("jax_enable_x64", True)
     # problem dimensions
-    state_dim, control_dim, T, iterations = 3, 3, 10, 1
+    state_dim, control_dim, T, iterations = 3, 3, 10, 3
     # random key
     key = jax.random.PRNGKey(42)
     # initialize ilqr
@@ -69,41 +69,56 @@ def test_ilqr():
     solver = idoc.ilqr.build(ilqr_problem, iterations)
     # initialize parameters
     params = init_params(key, state_dim, control_dim)
-    # initialize U
+    # initialize state
     Uinit = jnp.zeros((T, control_dim))
+    Xinit = idoc.ilqr.simulate(ilqr_problem, Uinit, params)
+    sinit = idoc.typs.State(X=Xinit, U=Uinit, Nu=jnp.zeros_like(Xinit))
     # check that both solvers give the same solution
-    for k, solve in [("direct", solver.direct), ("implicit", solver.implicit)]:
-        print(k)
-        s = solve(Uinit, params)
-        idoc.utils.check_kkt(solver.kkt, s, params)
+    def check_solution():
+        for k, solve in [("direct", solver.direct), ("implicit", solver.implicit)]:
+            print(k)
+            s = solve(sinit, params)
+            idoc.utils.check_kkt(solver.kkt, s, params)
+
+    check_solution()
 
     # check that the gradients match between two solvers
     def loss(s, params):
-        return (
-            1.0 * jnp.sum(s.X ** 2)
-            + 0.5 * jnp.sum(s.U ** 2)
-        )
+        return 1.0 * jnp.sum(s.X ** 2) + 0.5 * jnp.sum(s.U ** 2)
 
     def loss_direct(params):
-        return loss(solver.direct(Uinit, params), params)
+        s = solver.direct(sinit, params)
+        return loss(s, params)
 
     def loss_implicit(params):
-        return loss(solver.implicit(Uinit, params), params)
+        s = solver.implicit(sinit, params)
+        return loss(s, params)
 
     direct = jax.grad(loss_direct)(params)
     implicit = jax.grad(loss_implicit)(params)
     thres = 1e-4
 
-    def print_and_check(err):
-        print(err)
-        assert err < thres
+    print(direct.x0)
+    print(implicit.x0)
+    print(direct.theta.A)
+    print(implicit.theta.A)
 
-    print_and_check(idoc.utils.relative_difference(direct.theta.A, implicit.theta.A))
-    print_and_check(idoc.utils.relative_difference(direct.theta.B, implicit.theta.B))
-    print_and_check(idoc.utils.relative_difference(direct.theta.Q, implicit.theta.Q))
-    print_and_check(idoc.utils.relative_difference(direct.theta.Qf, implicit.theta.Qf))
-    print_and_check(idoc.utils.relative_difference(direct.theta.R, implicit.theta.R))
-    print_and_check(idoc.utils.relative_difference(direct.x0, implicit.x0))
+    idoc.utils.print_and_check(
+        idoc.utils.relative_difference(direct.theta.A, implicit.theta.A)
+    )
+    idoc.utils.print_and_check(
+        idoc.utils.relative_difference(direct.theta.B, implicit.theta.B)
+    )
+    idoc.utils.print_and_check(
+        idoc.utils.relative_difference(direct.theta.Q, implicit.theta.Q)
+    )
+    idoc.utils.print_and_check(
+        idoc.utils.relative_difference(direct.theta.Qf, implicit.theta.Qf)
+    )
+    idoc.utils.print_and_check(
+        idoc.utils.relative_difference(direct.theta.R, implicit.theta.R)
+    )
+    idoc.utils.print_and_check(idoc.utils.relative_difference(direct.x0, implicit.x0))
 
 
 if __name__ == "__main__":

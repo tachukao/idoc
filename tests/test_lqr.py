@@ -40,7 +40,7 @@ def init_params(key, state_dim, control_dim, horizon) -> idoc.lqr.Params:
 def test_lqr():
     jax.config.update("jax_enable_x64", True)
     # problem dimensions
-    state_dim, control_dim, T = 3, 2, 10
+    state_dim, control_dim, T = 3, 2, 5
     # random key
     key = jax.random.PRNGKey(42)
     # initialize solvers
@@ -63,27 +63,40 @@ def test_lqr():
             + jnp.sum(theta.lqr.A ** 2)
         )
 
-    def loss_direct(theta):
+    def direct_loss(theta):
         return loss(solver.direct(theta), theta)
 
-    def loss_implicit(theta):
+    def implicit_loss(theta):
         return loss(solver.implicit(theta), theta)
 
-    direct = jax.grad(loss_direct)(theta)
-    implicit = jax.grad(loss_implicit)(theta)
+    direct = jax.grad(direct_loss)(theta)
+    implicit = jax.grad(implicit_loss)(theta)
 
-    thres = 1e-4
+    pc = idoc.utils.print_and_check
+    rd = idoc.utils.relative_difference
 
-    def print_and_check(err):
-        print(err)
-        assert err < thres
+    print("Direct v implicit")
 
-    print_and_check(idoc.utils.relative_difference(direct.x0, implicit.x0))
-    print_and_check(idoc.utils.relative_difference(direct.lqr.A, implicit.lqr.A))
-    print_and_check(idoc.utils.relative_difference(direct.lqr.B, implicit.lqr.B))
-    print_and_check(idoc.utils.relative_difference(direct.lqr.Q, implicit.lqr.Q))
-    print_and_check(idoc.utils.relative_difference(direct.lqr.Qf, implicit.lqr.Qf))
-    print_and_check(idoc.utils.relative_difference(direct.lqr.R, implicit.lqr.R))
+    pc(rd(direct.x0, implicit.x0))
+    pc(rd(direct.lqr.A, implicit.lqr.A))
+    pc(rd(direct.lqr.B, implicit.lqr.B))
+    pc(rd(direct.lqr.d, implicit.lqr.d))
+    pc(rd(direct.lqr.M, implicit.lqr.M))
+    pc(rd(direct.lqr.Q, implicit.lqr.Q))
+    pc(rd(direct.lqr.Qf, implicit.lqr.Qf))
+    pc(rd(direct.lqr.q, implicit.lqr.q))
+    pc(rd(direct.lqr.qf, implicit.lqr.qf))
+    pc(rd(direct.lqr.R, implicit.lqr.R))
+    pc(rd(direct.lqr.r, implicit.lqr.r))
+
+    # findiff = idoc.utils.finite_difference_grad(lambda theta: direct_loss(theta), theta)
+    # print("Implicit v Finite Difference")
+    # pc(rd(findiff.x0, implicit.x0))
+    # pc(rd(findiff.lqr.A, implicit.lqr.A))
+    # pc(rd(findiff.lqr.B, implicit.lqr.B))
+    # pc(rd(findiff.lqr.Q, implicit.lqr.Q))
+    # pc(rd(findiff.lqr.Qf, implicit.lqr.Qf))
+    # pc(rd(findiff.lqr.R, implicit.lqr.R))
 
 
 if __name__ == "__main__":
