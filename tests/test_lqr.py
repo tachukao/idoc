@@ -89,7 +89,7 @@ def test_lqr():
     pc(rd(direct.lqr.R, implicit.lqr.R))
     pc(rd(direct.lqr.r, implicit.lqr.r))
 
-    # findiff = idoc.utils.finite_difference_grad(lambda theta: direct_loss(theta), theta)
+    # findiff = idoc.utils.finite_difference_grad(direct_loss, theta)
     # print("Implicit v Finite Difference")
     # pc(rd(findiff.x0, implicit.x0))
     # pc(rd(findiff.lqr.A, implicit.lqr.A))

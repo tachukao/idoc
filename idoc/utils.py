@@ -34,7 +34,7 @@ def relative_difference(z1, z2):
     return err
 
 
-def print_and_check(err, thres=1e-4):
+def print_and_check(err, thres=1e-3):
 
     print(err)
     assert err < thres

@@ -11,6 +11,8 @@ from . import lqr, typs
 import functools
 from dataclasses import dataclass
 
+mm = jax.vmap(jnp.matmul)
+
 
 @dataclass
 class Problem:
@@ -29,10 +31,9 @@ class Params(flax.struct.PyTreeNode):
     theta: Any
 
 
-def make_lqr_approx(cs: Problem, params: Params, flag=False) -> Callable:
+def make_lqr_approx(cs: Problem, params: Params, flag=True) -> Callable:
     T = cs.horizon
     x0, theta = params.x0, params.theta
-    mm = vmap(jnp.matmul)
 
     @jax.vmap
     def approx_timestep(t, x, u):
@@ -40,23 +41,24 @@ def make_lqr_approx(cs: Problem, params: Params, flag=False) -> Callable:
         Q = jax.jacfwd(jax.grad(cs.cost, argnums=1), argnums=1)(t, x, u, theta)
         R = jax.jacfwd(jax.grad(cs.cost, argnums=2), argnums=2)(t, x, u, theta)
         q, r = jax.grad(cs.cost, argnums=(1, 2))(t, x, u, theta)
-        if flag:
-            q = q - (Q @ x + M @ u)
-            r = r - (R @ u + M.T @ x)
         A, B = jax.jacobian(cs.dynamics, argnums=(1, 2))(t, x, u, theta)
-        return Q, q, R, r, M, A, B
+        if flag:
+            q = q - Q @ x - M @ u
+            r = r - R @ u - M.T @ x
+            d = cs.dynamics(t, x, u, theta) - A @ x - B @ u
+        else:
+            d = jnp.zeros(cs.state_dim)
+
+        return Q, q, R, r, M, A, B, d
 
     def approx(X, U):
         sX = jnp.concatenate((x0[None, ...], X[:-1]))
         xf = X[-1]
-        Q, q, R, r, M, A, B = approx_timestep(jnp.arange(T), sX, U)
+        Q, q, R, r, M, A, B, d = approx_timestep(jnp.arange(T), sX, U)
         Qf = jax.jacfwd(jax.grad(cs.costf, argnums=0), argnums=0)(xf, theta)
         qf = jax.grad(cs.costf, argnums=0)(xf, theta)
         if flag:
             qf = qf - Qf @ xf
-            d = X - (mm(A, sX) + mm(B, U))
-        else:
-            d = jnp.zeros((cs.horizon, cs.state_dim))
         return lqr.LQR(Q=Q, q=q, R=R, r=r, M=M, A=A, B=B, Qf=Qf, qf=qf, d=d)
 
     return approx
@@ -112,18 +114,19 @@ def build(cs: Problem, iterations: int):
         init: typs.State,
         params: Params,
     ) -> typs.State:
-        lqr_approx = make_lqr_approx(cs, params, False)
+        lqr_approx_false = make_lqr_approx(cs, params, False)
+        lqr_approx_true = make_lqr_approx(cs, params, True)
 
         def loop(z, _):
             X, U = z
-            p = lqr_approx(X, U)
+            p = lqr_approx_false(X, U)
             gains = lqr.backward(p, T)
             nX, nU, l = update(X, U, gains, params)
             return (nX, nU), l
 
         (X, U), L = lax.scan(loop, (init.X, init.U), jnp.arange(iterations))
-        lqr_approx = make_lqr_approx(cs, params, True)
-        p = lqr_approx(X, U)
+        print(L)
+        p = lqr_approx_true(X, U)
         Nu = lqr.adjoint(X, U, p, T)
         return typs.State(X=X, U=U, Nu=Nu)
 
