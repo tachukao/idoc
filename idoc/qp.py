@@ -4,8 +4,8 @@ import jax
 import jax.numpy as jnp
 import jax.ops as jo
 import flax
-from absl import app
 from jaxopt import implicit_diff
+from . import typs
 
 
 class QP(flax.struct.PyTreeNode):
@@ -53,3 +53,5 @@ _implicit_solver = implicit_diff.custom_root(kkt)(_direct_solver)
 
 direct_solver = lambda theta: _direct_solver(None, theta)
 implicit_solver = lambda theta: _implicit_solver(None, theta)
+
+solver = typs.Solver(direct=direct_solver, implicit=implicit_solver, kkt=kkt)

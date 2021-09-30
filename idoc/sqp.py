@@ -7,6 +7,7 @@ from . import qp
 from jaxopt import implicit_diff
 from typing import Callable, Any
 from dataclasses import dataclass
+from . import typs
 
 
 @dataclass
@@ -23,7 +24,7 @@ class SQP:
         return qp.QP(Q, c, E, d)
 
 
-def build(sqp: SQP, iterations: int):
+def build(sqp: SQP, iterations: int) -> typs.Solver:
     def f(z, p: qp.QP):
         return 0.5 * jnp.dot(jnp.dot(p.Q, z), z) + jnp.dot(p.c, z)
 
@@ -63,4 +64,4 @@ def build(sqp: SQP, iterations: int):
         x, _ = lax.scan(loop, x, jnp.arange(iterations))
         return x
 
-    return (solver, kkt, implicit_diff.custom_root(kkt)(solver))
+    return typs.Solver(direct=solver, kkt=kkt, implicit=implicit_diff.custom_root(kkt)(solver))

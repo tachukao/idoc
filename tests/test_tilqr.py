@@ -1,8 +1,6 @@
 import jax
 import jax.numpy as jnp
 import idoc
-from typing import Callable
-from absl import app
 
 
 def lqr_cost(X, U, theta: idoc.tilqr.Params):
@@ -13,18 +11,12 @@ def lqr_cost(X, U, theta: idoc.tilqr.Params):
     return 0.5 * (lq + lr)
 
 
-def init_stable(key, state_dim):
-    R = jax.random.normal(key, (state_dim, state_dim))
-    A, _ = jnp.linalg.qr(R)
-    return 0.5 * A
-
-
 def init_lqr(key, state_dim, control_dim) -> idoc.tilqr.TILQR:
     Q = jnp.eye(state_dim)
     Qf = jnp.eye(state_dim)
     R = jnp.eye(control_dim) * 0.01
     key, subkey = jax.random.split(key)
-    A = init_stable(subkey, state_dim)
+    A = idoc.utils.init_stable(subkey, state_dim)
     key, subkey = jax.random.split(key)
     B = jax.random.normal(subkey, (state_dim, control_dim))
     return idoc.tilqr.TILQR(Q, Qf, R, A, B)
@@ -39,28 +31,22 @@ def init_params(key, state_dim, control_dim) -> idoc.tilqr.Params:
     return idoc.tilqr.Params(x0, lqr)
 
 
-def check_kkt(kkt: Callable, s: idoc.typs.State, theta: idoc.tilqr.Params) -> None:
-    kkt_state = kkt(s, theta)
-    print(f"dLdX: {jnp.mean(jnp.abs(kkt_state.X))}")
-    print(f"dLdU: {jnp.mean(jnp.abs(kkt_state.U))}")
-    print(f"dLdNu: {jnp.mean(jnp.abs(kkt_state.Nu))}")
-
-
-def main(argv):
+def test_tilqr():
+    jax.config.update("jax_enable_x64", True)
     # problem dimensions
     state_dim, control_dim, T = 3, 2, 40
     # random key
     key = jax.random.PRNGKey(42)
     # initialize solvers
-    solve_direct, kkt, solve_implicit = idoc.tilqr.build(T)
+    solver = idoc.tilqr.build(T)
     # initialize parameters
     theta = init_params(key, state_dim, control_dim)
     # check that both solvers give the same solution
-    for k, solve in [("direct", solve_direct), ("implicit", solve_implicit)]:
+    for k, solve in [("direct", solver.direct), ("implicit", solver.implicit)]:
         print(k)
         s = solve(theta)
         print(lqr_cost(s.X, s.U, theta))
-        check_kkt(kkt, s, theta)
+        idoc.utils.check_kkt(solver.kkt, s, theta)
 
     # check that the gradients match between two solvers
     def loss(s, theta):
@@ -72,25 +58,27 @@ def main(argv):
         )
 
     def loss_direct(theta):
-        return loss(solve(theta), theta)
+        return loss(solver.direct(theta), theta)
 
     def loss_implicit(theta):
-        return loss(solve_implicit(theta), theta)
+        return loss(solver.implicit(theta), theta)
 
     direct = jax.grad(loss_direct)(theta)
     implicit = jax.grad(loss_implicit)(theta)
 
-    def compare(z1, z2):
-        err = jnp.mean((z1 - z2) ** 2) / jnp.mean((z1 + z2) ** 2 + 1e-9)
-        return err
+    thres = 1e-4
 
-    print(f"Gradient difference for [x0]: {compare(direct.x0, implicit.x0)}")
-    print(f"Gradient difference for [A]: {compare(direct.lqr.A, implicit.lqr.A)}")
-    print(f"Gradient difference for [B]: {compare(direct.lqr.B, implicit.lqr.B)}")
-    print(f"Gradient difference for [Q]: {compare(direct.lqr.Q, implicit.lqr.Q)}")
-    print(f"Gradient difference for [Qf]: {compare(direct.lqr.Qf, implicit.lqr.Qf)}")
-    print(f"Gradient difference for [R]: {compare(direct.lqr.R, implicit.lqr.R)}")
+    def print_and_check(err):
+        print(err)
+        assert err < thres
+
+    print_and_check(idoc.utils.relative_difference(direct.x0, implicit.x0))
+    print_and_check(idoc.utils.relative_difference(direct.lqr.A, implicit.lqr.A))
+    print_and_check(idoc.utils.relative_difference(direct.lqr.B, implicit.lqr.B))
+    print_and_check(idoc.utils.relative_difference(direct.lqr.Q, implicit.lqr.Q))
+    print_and_check(idoc.utils.relative_difference(direct.lqr.Qf, implicit.lqr.Qf))
+    print_and_check(idoc.utils.relative_difference(direct.lqr.R, implicit.lqr.R))
 
 
 if __name__ == "__main__":
-    app.run(main)
+    test_tilqr()

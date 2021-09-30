@@ -32,7 +32,7 @@ class Params(flax.struct.PyTreeNode):
     lqr: TILQR
 
 
-def build(horizon: int):
+def build(horizon: int) -> typs.Solver:
     """Build a time-invariant LQR differentiable solver"""
 
     def kkt(s: typs.State, theta: Params) -> typs.State:
@@ -53,7 +53,7 @@ def build(horizon: int):
         dLdNu = jnp.concatenate((x0[None, ...], X[:-1]), axis=0) @ AT + U @ BT - X
         return typs.State(X=dLdX, U=dLdU, Nu=dLdNu)
 
-    def solve(_, theta: Params):
+    def direct(_, theta: Params):
         x0, lqr = theta.x0, theta.lqr.symm()
         A, B, Q, R, Qf = lqr.A, lqr.B, lqr.Q, lqr.R, lqr.Qf
         AT = A.T
@@ -98,5 +98,7 @@ def build(horizon: int):
         Nu = adjoint(X)
         return typs.State(X, U, Nu)
 
-    solve2 = implicit_diff.custom_root(kkt)(solve)
-    return lambda x: solve(None, x), kkt, lambda x: solve2(None, x)
+    implicit = implicit_diff.custom_root(kkt)(direct)
+    return typs.Solver(
+        direct=lambda x: direct(None, x), kkt=kkt, implicit=lambda x: implicit(None, x)
+    )

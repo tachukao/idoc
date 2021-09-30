@@ -130,10 +130,10 @@ def kkt(s: typs.State, params: Params) -> typs.State:
     return typs.State(X=dLdX, U=dLdU, Nu=dLdNu)
 
 
-def build(horizon: int):
+def build(horizon: int) -> typs.Solver:
     """Build an LQR differentiable solver"""
 
-    def solve(_, theta: Params):
+    def direct(_, theta: Params):
         x0, lqr = theta.x0, theta.lqr.symm()
         A, B, d = lqr.A, lqr.B, lqr.d
 
@@ -152,7 +152,7 @@ def build(horizon: int):
         Nu = adjoint(X, U, lqr, horizon)
         return typs.State(X, U, Nu)
 
-    solve2 = implicit_diff.custom_root(kkt)(solve)
-    return lambda x: solve(None, x), kkt, lambda x: solve2(None, x)
-
-
+    implicit = implicit_diff.custom_root(kkt)(direct)
+    return typs.Solver(
+        direct=lambda x: direct(None, x), kkt=kkt, implicit=lambda x: implicit(None, x)
+    )
