@@ -1,3 +1,5 @@
+"""Tests for QP solver"""
+
 import jax
 import jax.numpy as jnp
 import idoc

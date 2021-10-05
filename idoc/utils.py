@@ -7,14 +7,14 @@ from . import typs
 
 
 def init_stable(key, state_dim):
-    """Initialize a stable matrix with dimensions `state_dim`."""
+    """Initialize a stable matrix with dimensions `state_dim`"""
     R = jax.random.normal(key, (state_dim, state_dim))
     A, _ = jnp.linalg.qr(R)
     return 0.5 * A
 
 
 def check_kkt(kkt: Callable, s: typs.State, theta: Any, thres=1e-5) -> None:
-    """Check KKT outputs."""
+    """Check KKT outputs"""
     kkt_state = kkt(s, theta)
     x = jnp.mean(jnp.abs(kkt_state.X))
     u = jnp.mean(jnp.abs(kkt_state.U))
@@ -35,12 +35,12 @@ def relative_difference(z1, z2):
 
 
 def print_and_check(err, thres=1e-3):
-
     print(err)
     assert err < thres
 
 
 def finite_difference_grad(f, x, eps=1e-8):
+    """Computes finite difference gradient"""
     flat_x, unravel = flatten_util.ravel_pytree(x)
 
     def flat_f(flat_theta):

@@ -1,3 +1,5 @@
+"""Test for iLQR solver"""
+
 import jax.numpy as jnp
 import jax
 from flax import struct

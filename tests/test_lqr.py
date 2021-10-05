@@ -1,3 +1,5 @@
+"""Test for LQR solver"""
+
 import idoc
 import jax
 import jax.numpy as jnp

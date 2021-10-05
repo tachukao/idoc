@@ -1,3 +1,4 @@
+"""Tests for SQP solver"""
 import jax
 import jax.numpy as jnp
 from jax import flatten_util

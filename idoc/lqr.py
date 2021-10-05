@@ -15,6 +15,7 @@ mm = jax.vmap(jnp.matmul)
 
 
 class Gains(flax.struct.PyTreeNode):
+    """LQR gains"""
 
     K: jnp.ndarray
     k: jnp.ndarray
@@ -60,6 +61,10 @@ class Params(flax.struct.PyTreeNode):
 
 
 def backward(lqr: LQR, horizon: int) -> Gains:
+    """LQR backward pass
+
+    Returns Gains used in the forward pass
+    """
     A, B, d = lqr.A, lqr.B, lqr.d
     Q, q, Qf, qf = lqr.Q, lqr.q, lqr.Qf, lqr.qf
     R, r = lqr.R, lqr.r
@@ -88,7 +93,9 @@ def backward(lqr: LQR, horizon: int) -> Gains:
     return Gains(K=jnp.flip(Ks, axis=0), k=jnp.flip(ks, axis=0))
 
 
-def adjoint(X, U, lqr: LQR, horizon: int):
+def adjoint(X, U, lqr: LQR, horizon: int) -> jnp.ndarray:
+    """Computes LQR adjoints 
+    """
     A = lqr.A
     Q, q, Qf, qf = lqr.Q, lqr.q, lqr.Qf, lqr.qf
     M = lqr.M
@@ -131,6 +138,7 @@ def kkt(s: typs.State, params: Params) -> typs.State:
 
 
 def forward(lqr: LQR, x0: jnp.ndarray, gains: Gains):
+    """Simulates forward dynamics"""
     A, B, d = lqr.A, lqr.B, lqr.d
 
     def dyn(x, inps):
@@ -144,7 +152,7 @@ def forward(lqr: LQR, x0: jnp.ndarray, gains: Gains):
 
 
 def build(horizon: int) -> typs.Solver:
-    """Build an LQR differentiable solver"""
+    """Build a LQR differentiable solver"""
 
     def direct(_, params: Params):
         x0, lqr = params.x0, params.lqr.symm()

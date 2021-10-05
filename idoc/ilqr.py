@@ -16,6 +16,21 @@ mm = jax.vmap(jnp.matmul)
 
 @dataclass
 class Problem:
+    """iLQR Problem
+
+    cost : Callable
+        running cost l(t, x, u)
+    costf : Callable 
+        final state cost lf(xf)
+    dynamics : Callable
+        dynamical update f(t, x, u, theta)
+    horizon : int
+        horizon of the problem
+    state_dim : int 
+        dimensionality of the state
+    control_dim : int 
+        dimensionality of the control inputs
+    """
     cost: Callable[[int, jnp.ndarray, jnp.ndarray, Optional[Any]], jnp.ndarray]
     costf: Callable[[jnp.ndarray, Optional[Any]], jnp.ndarray]
     dynamics: Callable[[int, jnp.ndarray, jnp.ndarray, Optional[Any]], jnp.ndarray]
@@ -32,6 +47,7 @@ class Params(flax.struct.PyTreeNode):
 
 
 def make_lqr_approx(cs: Problem, params: Params, flag=True) -> Callable:
+    """Create LQR approximation function"""
     T = cs.horizon
     x0, theta = params.x0, params.theta
 
@@ -51,7 +67,7 @@ def make_lqr_approx(cs: Problem, params: Params, flag=True) -> Callable:
 
         return Q, q, R, r, M, A, B, d
 
-    def approx(X, U):
+    def approx(X, U) -> lqr.LQR:
         sX = jnp.concatenate((x0[None, ...], X[:-1]))
         xf = X[-1]
         Q, q, R, r, M, A, B, d = approx_timestep(jnp.arange(T), sX, U)
@@ -65,6 +81,7 @@ def make_lqr_approx(cs: Problem, params: Params, flag=True) -> Callable:
 
 
 def simulate(cs: Problem, U: jnp.ndarray, params: Params) -> jnp.ndarray:
+    """Simulates state trajectory"""
     x0 = params.x0
     T = U.shape[0]
 
@@ -79,7 +96,8 @@ def simulate(cs: Problem, U: jnp.ndarray, params: Params) -> jnp.ndarray:
     return X
 
 
-def build(cs: Problem, iterations: int):
+def build(cs: Problem, iterations: int) -> typs.Solver:
+    """Build iLQR solver"""
     T = cs.horizon
 
     def kkt(s: typs.State, params: Params) -> typs.State:

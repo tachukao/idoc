@@ -1,3 +1,5 @@
+"""Tests for time-invariant LQR solver"""
+
 import jax
 import jax.numpy as jnp
 import idoc
