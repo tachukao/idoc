@@ -155,7 +155,7 @@ def build(horizon: int) -> typs.Solver:
     """Build a LQR differentiable solver"""
 
     def direct(_, params: Params):
-        x0, lqr = params.x0, params.lqr.symm()
+        x0, lqr = params.x0, params.lqr
         gains = backward(lqr, horizon)
         X, U = forward(lqr, x0, gains)
         Nu = adjoint(X, U, lqr, horizon)

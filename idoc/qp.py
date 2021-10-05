@@ -8,6 +8,7 @@ from . import typs
 
 
 class QP(flax.struct.PyTreeNode):
+    """QP specs"""
     Q: jnp.ndarray
     c: jnp.ndarray
     E: jnp.ndarray
@@ -15,6 +16,7 @@ class QP(flax.struct.PyTreeNode):
 
 
 def loss(z, theta: QP):
+    """QP loss"""
     return 0.5 * jnp.dot(jnp.dot(theta.Q, z), z) + jnp.dot(theta.c, z)
 
 
@@ -22,11 +24,13 @@ dloss = jax.grad(loss)
 
 
 def feasibility(z, theta):
+    """QP constraint"""
     E, d = theta.E, theta.d
     return E @ z - d
 
 
 def kkt(x, theta):
+    """QP KKT conditions"""
     z, nu = x
     _, feasibility_vjp = jax.vjp(feasibility, z, theta)
     stationarity = dloss(z, theta) + feasibility_vjp(nu)[0]

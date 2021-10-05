@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 from typing import Callable, Any
 from jax import flatten_util
-import scipy
+import scipy.optimize._numdiff as numdiff
 from . import typs
 
 
@@ -27,7 +27,7 @@ def check_kkt(kkt: Callable, s: typs.State, theta: Any, thres=1e-5) -> None:
     assert nu < thres
 
 
-def relative_difference(z1, z2):
+def relative_difference(z1, z2, symm=False):
     az1 = jnp.abs(z1)
     az2 = jnp.abs(z2)
     err = jnp.mean(jnp.abs(z1 - z2) / (az1 + az2 + 1e-9))
@@ -39,7 +39,7 @@ def print_and_check(err, thres=1e-3):
     assert err < thres
 
 
-def finite_difference_grad(f, x, eps=1e-8):
+def finite_difference_grad(f, x, method='3-point', eps=1e-8):
     """Computes finite difference gradient"""
     flat_x, unravel = flatten_util.ravel_pytree(x)
 
@@ -47,7 +47,6 @@ def finite_difference_grad(f, x, eps=1e-8):
         theta = unravel(flat_theta)
         return f(theta)
 
-    d = jnp.ones_like(flat_x) * eps
-    flat_g = scipy.optimize.approx_fprime(flat_x, flat_f, d)
+    flat_g = numdiff.approx_derivative(flat_f, flat_x, method=method, abs_step=eps)
     g = unravel(flat_g)
     return g

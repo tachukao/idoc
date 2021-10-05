@@ -5,14 +5,6 @@ import jax
 import jax.numpy as jnp
 
 
-def lqr_cost(X, U, theta: idoc.lqr.Params):
-    Q = theta.lqr.Q
-    x0 = theta.x0
-    lq = jnp.sum(X * jnp.dot(X, Q)) + jnp.sum(x0 * jnp.dot(Q, x0))
-    lr = jnp.sum(U * jnp.dot(U, theta.lqr.R))
-    return 0.5 * (lq + lr)
-
-
 def init_lqr(key, state_dim: int, control_dim: int, horizon: int) -> idoc.lqr.LQR:
     """Initialize a random LQR spec."""
     Q = jnp.stack(horizon * (jnp.eye(state_dim),))
@@ -48,57 +40,48 @@ def test_lqr():
     # initialize solvers
     solver = idoc.lqr.build(T)
     # initialize parameters
-    theta = init_params(key, state_dim, control_dim, T)
+    params = init_params(key, state_dim, control_dim, T)
     # check that both solvers give the same solution
     for k, solve in [("direct", solver.direct), ("implicit", solver.implicit)]:
         print(k)
-        s = solve(theta)
-        # print(lqr_cost(s.X, s.U, theta))
-        idoc.utils.check_kkt(solver.kkt, s, theta)
+        s = solve(params)
+        idoc.utils.check_kkt(solver.kkt, s, params)
 
     # check that the gradients match between two solvers
-    def loss(s, theta):
+    def loss(s, params):
         return (
             1.0 * jnp.sum(s.X ** 2)
             + 0.5 * jnp.sum(s.U ** 2)
-            + jnp.sum(theta.x0 ** 2)
-            + jnp.sum(theta.lqr.A ** 2)
+            + jnp.sum(params.x0 ** 2)
+            + jnp.sum(params.lqr.A ** 2)
         )
 
-    def direct_loss(theta):
-        return loss(solver.direct(theta), theta)
+    def direct_loss(params):
+        params = idoc.lqr.Params(params.x0, params.lqr.symm())
+        return loss(solver.direct(params), params)
 
-    def implicit_loss(theta):
-        return loss(solver.implicit(theta), theta)
+    def implicit_loss(params):
+        params = idoc.lqr.Params(params.x0, params.lqr.symm())
+        return loss(solver.implicit(params), params)
 
-    direct = jax.grad(direct_loss)(theta)
-    implicit = jax.grad(implicit_loss)(theta)
+    direct = jax.grad(direct_loss)(params)
+    implicit = jax.grad(implicit_loss)(params)
 
     pc = idoc.utils.print_and_check
     rd = idoc.utils.relative_difference
 
     print("Direct v implicit")
-
     pc(rd(direct.x0, implicit.x0))
     pc(rd(direct.lqr.A, implicit.lqr.A))
     pc(rd(direct.lqr.B, implicit.lqr.B))
     pc(rd(direct.lqr.d, implicit.lqr.d))
     pc(rd(direct.lqr.M, implicit.lqr.M))
     pc(rd(direct.lqr.Q, implicit.lqr.Q))
-    pc(rd(direct.lqr.Qf, implicit.lqr.Qf))
     pc(rd(direct.lqr.q, implicit.lqr.q))
-    pc(rd(direct.lqr.qf, implicit.lqr.qf))
     pc(rd(direct.lqr.R, implicit.lqr.R))
     pc(rd(direct.lqr.r, implicit.lqr.r))
-
-    # findiff = idoc.utils.finite_difference_grad(direct_loss, theta)
-    # print("Implicit v Finite Difference")
-    # pc(rd(findiff.x0, implicit.x0))
-    # pc(rd(findiff.lqr.A, implicit.lqr.A))
-    # pc(rd(findiff.lqr.B, implicit.lqr.B))
-    # pc(rd(findiff.lqr.Q, implicit.lqr.Q))
-    # pc(rd(findiff.lqr.Qf, implicit.lqr.Qf))
-    # pc(rd(findiff.lqr.R, implicit.lqr.R))
+    pc(rd(direct.lqr.Qf, implicit.lqr.Qf))
+    pc(rd(direct.lqr.qf, implicit.lqr.qf))
 
 
 if __name__ == "__main__":

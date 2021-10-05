@@ -29,6 +29,7 @@ class SQP:
 
 def build(sqp: SQP, iterations: int) -> typs.Solver:
     def kkt(x, theta):
+        """SQP KKT conditions"""
         z, nu = x
         stationarity = jax.grad(sqp.lagrangian, argnums=0)(z, nu, theta)
         primal_feasability = sqp.g(z, theta)
