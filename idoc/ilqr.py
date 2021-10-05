@@ -5,7 +5,7 @@ import jax
 from jax import lax, vmap
 import jax.numpy as jnp
 from jaxopt import implicit_diff
-from typing import Callable, Any, Optional
+from typing import Callable, Any, Optional, NamedTuple
 import flax
 from . import lqr, typs
 import functools
@@ -20,17 +20,18 @@ class Problem:
 
     cost : Callable
         running cost l(t, x, u)
-    costf : Callable 
+    costf : Callable
         final state cost lf(xf)
     dynamics : Callable
         dynamical update f(t, x, u, theta)
     horizon : int
         horizon of the problem
-    state_dim : int 
+    state_dim : int
         dimensionality of the state
-    control_dim : int 
+    control_dim : int
         dimensionality of the control inputs
     """
+
     cost: Callable[[int, jnp.ndarray, jnp.ndarray, Optional[Any]], jnp.ndarray]
     costf: Callable[[jnp.ndarray, Optional[Any]], jnp.ndarray]
     dynamics: Callable[[int, jnp.ndarray, jnp.ndarray, Optional[Any]], jnp.ndarray]
@@ -39,7 +40,7 @@ class Problem:
     control_dim: int
 
 
-class Params(flax.struct.PyTreeNode):
+class Params(NamedTuple):
     """iLQR Params"""
 
     x0: jnp.ndarray

@@ -2,11 +2,11 @@
 
 import jax.numpy as jnp
 import jax
-from flax import struct
+from typing import NamedTuple
 import idoc
 
 
-class Params(struct.PyTreeNode):
+class Params(NamedTuple):
     Q: jnp.ndarray
     q: jnp.ndarray
     Qf: jnp.ndarray

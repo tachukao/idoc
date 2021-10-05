@@ -1,10 +1,9 @@
 import jax.numpy as jnp
-import flax
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, NamedTuple
 
 
-class State(flax.struct.PyTreeNode):
+class State(NamedTuple):
     X: jnp.ndarray
     U: jnp.ndarray
     Nu: jnp.ndarray

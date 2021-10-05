@@ -69,17 +69,15 @@ def test_tilqr():
     implicit = jax.grad(loss_implicit)(theta)
 
     thres = 1e-4
+    pc = idoc.utils.print_and_check
+    rd = idoc.utils.relative_difference
 
-    def print_and_check(err):
-        print(err)
-        assert err < thres
-
-    print_and_check(idoc.utils.relative_difference(direct.x0, implicit.x0))
-    print_and_check(idoc.utils.relative_difference(direct.lqr.A, implicit.lqr.A))
-    print_and_check(idoc.utils.relative_difference(direct.lqr.B, implicit.lqr.B))
-    print_and_check(idoc.utils.relative_difference(direct.lqr.Q, implicit.lqr.Q))
-    print_and_check(idoc.utils.relative_difference(direct.lqr.Qf, implicit.lqr.Qf))
-    print_and_check(idoc.utils.relative_difference(direct.lqr.R, implicit.lqr.R))
+    pc(rd(direct.x0, implicit.x0))
+    pc(rd(direct.lqr.A, implicit.lqr.A))
+    pc(rd(direct.lqr.B, implicit.lqr.B))
+    pc(rd(direct.lqr.Q, implicit.lqr.Q))
+    pc(rd(direct.lqr.Qf, implicit.lqr.Qf))
+    pc(rd(direct.lqr.R, implicit.lqr.R))
 
 
 if __name__ == "__main__":

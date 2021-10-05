@@ -5,11 +5,11 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 from jaxopt import implicit_diff
-import flax
 from . import typs
+from typing import NamedTuple
 
 
-class TILQR(flax.struct.PyTreeNode):
+class TILQR(NamedTuple):
     """time-invariant LQR specs"""
 
     Q: jnp.ndarray
@@ -25,7 +25,7 @@ class TILQR(flax.struct.PyTreeNode):
         return TILQR(Q=Q, Qf=Qf, R=R, A=self.A, B=self.B)
 
 
-class Params(flax.struct.PyTreeNode):
+class Params(NamedTuple):
     """time-invariant LQR parameters"""
 
     x0: jnp.ndarray

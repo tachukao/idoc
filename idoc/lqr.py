@@ -7,21 +7,21 @@ import jax.numpy as jnp
 from jax import lax
 from absl import app
 from jaxopt import implicit_diff
-from typing import Callable
+from typing import Callable, NamedTuple
 from . import typs
 
 
 mm = jax.vmap(jnp.matmul)
 
 
-class Gains(flax.struct.PyTreeNode):
+class Gains(NamedTuple):
     """LQR gains"""
 
     K: jnp.ndarray
     k: jnp.ndarray
 
 
-class LQR(flax.struct.PyTreeNode):
+class LQR(NamedTuple):
     """LQR specs"""
 
     Q: jnp.ndarray
@@ -53,7 +53,7 @@ class LQR(flax.struct.PyTreeNode):
         )
 
 
-class Params(flax.struct.PyTreeNode):
+class Params(NamedTuple):
     """LQR parameters"""
 
     x0: jnp.ndarray
@@ -94,8 +94,7 @@ def backward(lqr: LQR, horizon: int) -> Gains:
 
 
 def adjoint(X, U, lqr: LQR, horizon: int) -> jnp.ndarray:
-    """Computes LQR adjoints 
-    """
+    """Computes LQR adjoints"""
     A = lqr.A
     Q, q, Qf, qf = lqr.Q, lqr.q, lqr.Qf, lqr.qf
     M = lqr.M

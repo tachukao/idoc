@@ -13,7 +13,6 @@ setup(
         "jax",
         "jaxopt",
         "optax",
-        "flax",
         "scikit-learn",
     ],
     packages=find_packages(),

@@ -86,29 +86,24 @@ def test_sqp():
         direct = jax.grad(direct_loss, argnums=1)(init_x, theta)
         implicit = jax.grad(implicit_loss, argnums=1)(init_x, theta)
 
+        pc = idoc.utils.print_and_check
+        rd = idoc.utils.relative_difference
+
         print("Direct v Implicit")
-        idoc.utils.print_and_check(idoc.utils.relative_difference(direct.Q, implicit.Q))
-        idoc.utils.print_and_check(idoc.utils.relative_difference(direct.c, implicit.c))
-        idoc.utils.print_and_check(idoc.utils.relative_difference(direct.d, implicit.d))
-        idoc.utils.print_and_check(idoc.utils.relative_difference(direct.E, implicit.E))
+        pc(rd(direct.Q, implicit.Q))
+        pc(rd(direct.c, implicit.c))
+        pc(rd(direct.d, implicit.d))
+        pc(rd(direct.E, implicit.E))
 
         print("Implicit v Finite Difference")
         findiff = idoc.utils.finite_difference_grad(
             lambda theta: direct_loss(init_x, theta), theta
         )
 
-        idoc.utils.print_and_check(
-            idoc.utils.relative_difference(implicit.Q, findiff.Q)
-        )
-        idoc.utils.print_and_check(
-            idoc.utils.relative_difference(implicit.c, findiff.c)
-        )
-        idoc.utils.print_and_check(
-            idoc.utils.relative_difference(implicit.d, findiff.d)
-        )
-        idoc.utils.print_and_check(
-            idoc.utils.relative_difference(implicit.E, findiff.E)
-        )
+        pc(rd(implicit.Q, findiff.Q))
+        pc(rd(implicit.c, findiff.c))
+        pc(rd(implicit.d, findiff.d))
+        pc(rd(implicit.E, findiff.E))
 
 
 if __name__ == "__main__":

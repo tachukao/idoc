@@ -2,12 +2,12 @@
 """
 import jax
 import jax.numpy as jnp
-import flax
 from jaxopt import implicit_diff
 from . import typs
+from typing import NamedTuple
 
 
-class QP(flax.struct.PyTreeNode):
+class QP(NamedTuple):
     """QP specs"""
     Q: jnp.ndarray
     c: jnp.ndarray
