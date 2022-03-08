@@ -4,7 +4,7 @@
 import jax
 from jax import lax, vmap
 import jax.numpy as jnp
-from jaxopt import implicit_diff
+from jaxopt import implicit_diff, linear_solve
 from typing import Callable, Any, Optional, NamedTuple
 import flax
 from . import lqr, typs
@@ -47,7 +47,7 @@ class Params(NamedTuple):
     theta: Any
 
 
-def make_lqr_approx(cs: Problem, params: Params, flag=True) -> Callable:
+def make_lqr_approx(cs: Problem, params: Params, local=True) -> Callable:
     """Create LQR approximation function"""
     T = cs.horizon
     x0, theta = params.x0, params.theta
@@ -59,7 +59,7 @@ def make_lqr_approx(cs: Problem, params: Params, flag=True) -> Callable:
         R = jax.jacfwd(jax.grad(cs.cost, argnums=2), argnums=2)(t, x, u, theta)
         q, r = jax.grad(cs.cost, argnums=(1, 2))(t, x, u, theta)
         A, B = jax.jacobian(cs.dynamics, argnums=(1, 2))(t, x, u, theta)
-        if flag:
+        if not local:
             q = q - Q @ x - M @ u
             r = r - R @ u - M.T @ x
             d = cs.dynamics(t, x, u, theta) - A @ x - B @ u
@@ -74,7 +74,7 @@ def make_lqr_approx(cs: Problem, params: Params, flag=True) -> Callable:
         Q, q, R, r, M, A, B, d = approx_timestep(jnp.arange(T), sX, U)
         Qf = jax.jacfwd(jax.grad(cs.costf, argnums=0), argnums=0)(xf, theta)
         qf = jax.grad(cs.costf, argnums=0)(xf, theta)
-        if flag:
+        if not local:
             qf = qf - Qf @ xf
         return lqr.LQR(Q=Q, q=q, R=R, r=r, M=M, A=A, B=B, Qf=Qf, qf=qf, d=d)
 
@@ -102,7 +102,7 @@ def build(cs: Problem, iterations: int) -> typs.Solver:
     T = cs.horizon
 
     def kkt(s: typs.State, params: Params) -> typs.State:
-        p = make_lqr_approx(cs, params, True)(s.X, s.U)
+        p = make_lqr_approx(cs, params, local=False)(s.X, s.U)
         return lqr.kkt(s, lqr.Params(x0=params.x0, lqr=p))
 
     def update(
@@ -133,23 +133,23 @@ def build(cs: Problem, iterations: int) -> typs.Solver:
         init: typs.State,
         params: Params,
     ) -> typs.State:
-        lqr_approx_false = make_lqr_approx(cs, params, False)
-        lqr_approx_true = make_lqr_approx(cs, params, True)
+        lqr_approx_global = make_lqr_approx(cs, params, local=False)
+        lqr_approx_local= make_lqr_approx(cs, params, local=True)
 
         def loop(z, _):
             X, U = z
-            p = lqr_approx_false(X, U)
+            p = lqr_approx_local(X, U)
             gains = lqr.backward(p, T)
             nX, nU, l = update(X, U, gains, params)
             return (nX, nU), l
 
         (X, U), L = lax.scan(loop, (init.X, init.U), jnp.arange(iterations))
         print(L)
-        p = lqr_approx_true(X, U)
+        p = lqr_approx_global(X, U)
         Nu = lqr.adjoint(X, U, p, T)
         return typs.State(X=X, U=U, Nu=Nu)
 
-    implicit_ilqr = implicit_diff.custom_root(kkt)(ilqr)
+    implicit_ilqr = implicit_diff.custom_root(kkt, solve=linear_solve.solve_cg)(ilqr)
 
     return typs.Solver(
         direct=ilqr,

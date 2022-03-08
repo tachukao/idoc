@@ -3,6 +3,7 @@
 import jax
 import jax.numpy as jnp
 import idoc
+from jax.test_util import check_grads
 
 
 def lqr_cost(X, U, theta: idoc.tilqr.Params):
@@ -59,25 +60,28 @@ def test_tilqr():
             + jnp.sum(theta.lqr.A ** 2)
         )
 
-    def loss_direct(theta):
+    def direct_loss(theta):
         return loss(solver.direct(theta), theta)
 
-    def loss_implicit(theta):
+    def implicit_loss(theta):
         return loss(solver.implicit(theta), theta)
 
-    direct = jax.grad(loss_direct)(theta)
-    implicit = jax.grad(loss_implicit)(theta)
+    # check along one random direction
+    check_grads(implicit_loss, (theta,), 1, modes=("rev",))
 
-    thres = 1e-4
-    pc = idoc.utils.print_and_check
-    rd = idoc.utils.relative_difference
+    # direct = jax.grad(loss_direct)(theta)
+    # implicit = jax.grad(loss_implicit)(theta)
 
-    pc(rd(direct.x0, implicit.x0))
-    pc(rd(direct.lqr.A, implicit.lqr.A))
-    pc(rd(direct.lqr.B, implicit.lqr.B))
-    pc(rd(direct.lqr.Q, implicit.lqr.Q))
-    pc(rd(direct.lqr.Qf, implicit.lqr.Qf))
-    pc(rd(direct.lqr.R, implicit.lqr.R))
+    # thres = 1e-4
+    # pc = idoc.utils.print_and_check
+    # rd = idoc.utils.relative_difference
+
+    # pc(rd(direct.x0, implicit.x0))
+    # pc(rd(direct.lqr.A, implicit.lqr.A))
+    # pc(rd(direct.lqr.B, implicit.lqr.B))
+    # pc(rd(direct.lqr.Q, implicit.lqr.Q))
+    # pc(rd(direct.lqr.Qf, implicit.lqr.Qf))
+    # pc(rd(direct.lqr.R, implicit.lqr.R))
 
 
 if __name__ == "__main__":

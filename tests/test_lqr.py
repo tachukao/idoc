@@ -3,6 +3,7 @@
 import idoc
 import jax
 import jax.numpy as jnp
+from jax.test_util import check_grads
 
 
 def init_lqr(key, state_dim: int, control_dim: int, horizon: int) -> idoc.lqr.LQR:
@@ -11,9 +12,9 @@ def init_lqr(key, state_dim: int, control_dim: int, horizon: int) -> idoc.lqr.LQ
     q = 0.2 * jnp.stack(horizon * (jnp.ones(state_dim),))
     Qf = jnp.eye(state_dim)
     qf = 0.2 * jnp.ones((state_dim,))
-    R = jnp.stack(horizon * (jnp.eye(control_dim),)) * 0.01
-    r = 0.01 * jnp.stack(horizon * (jnp.ones(control_dim),))
-    M = 0.02 * jnp.stack(horizon * (jnp.ones((state_dim, control_dim)),))
+    R = 1e-4 * jnp.stack(horizon * (jnp.eye(control_dim),)) 
+    r = 1e-4 * jnp.stack(horizon * (jnp.ones(control_dim),))
+    M = 1e-4 * jnp.stack(horizon * (jnp.ones((state_dim, control_dim)),))
     key, subkey = jax.random.split(key)
     A = jnp.stack(horizon * (idoc.utils.init_stable(subkey, state_dim),))
     key, subkey = jax.random.split(key)
@@ -50,10 +51,10 @@ def test_lqr():
     # check that the gradients match between two solvers
     def loss(s, params):
         return (
-            1.0 * jnp.sum(s.X ** 2)
+            0.5 * jnp.sum(s.X ** 2)
             + 0.5 * jnp.sum(s.U ** 2)
-            + jnp.sum(params.x0 ** 2)
-            + jnp.sum(params.lqr.A ** 2)
+            #+ jnp.sum(params.x0 ** 2)
+            #+ jnp.sum(params.lqr.A ** 2)
         )
 
     def direct_loss(params):
@@ -63,6 +64,10 @@ def test_lqr():
     def implicit_loss(params):
         params = idoc.lqr.Params(params.x0, params.lqr.symm())
         return loss(solver.implicit(params), params)
+
+
+    # check along one random direction
+    # check_grads(implicit_loss, (params,), 1, modes=("rev",))
 
     direct = jax.grad(direct_loss)(params)
     implicit = jax.grad(implicit_loss)(params)

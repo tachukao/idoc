@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 from absl import app
-from jaxopt import implicit_diff
+from jaxopt import implicit_diff, linear_solve
 from typing import Callable, NamedTuple
 from . import typs
 
@@ -71,21 +71,23 @@ def backward(lqr: LQR, horizon: int) -> Gains:
     M = lqr.M
     AT = A.transpose(0, 2, 1)
     BT = B.transpose(0, 2, 1)
+    EPS = 1e-8
+    jitter = EPS * jnp.eye(R.shape[-1])
+    symmetrize = lambda x: 0.5 * (x + x.T)
 
     def bwd(state, inps):
-        EPS = 1e-12
-        jitter = EPS * jnp.eye(R.shape[-1])
         t = inps
         V, v = state
         Gxx = Q[t] + AT[t] @ V @ A[t]
-        Guu = R[t] + BT[t] @ V @ B[t]
+        Guu = symmetrize(R[t] + BT[t] @ V @ B[t])
         Gxu = M[t] + AT[t] @ V @ B[t]
-        gx = q[t] + AT[t] @ v + AT[t] @ V @ d[t]
-        gu = r[t] + BT[t] @ v + BT[t] @ V @ d[t]
+        Vd = V @ d[t]
+        gx = q[t] + AT[t] @ v + AT[t] @ Vd
+        gu = r[t] + BT[t] @ v + BT[t] @ Vd
         Gtuu = Guu + jitter
         K = -jax.scipy.linalg.solve(Gtuu, Gxu.T)
         k = -jax.scipy.linalg.solve(Gtuu, gu)
-        V = Gxx + Gxu @ K + K.T @ Gxu.T + K.T @ Guu @ K
+        V = symmetrize(Gxx + Gxu @ K + K.T @ Gxu.T + K.T @ Guu @ K)
         v = gx + Gxu @ k + K.T @ gu + K.T @ Guu @ k
         return (V, v), (K, k)
 
@@ -160,7 +162,7 @@ def build(horizon: int) -> typs.Solver:
         Nu = adjoint(X, U, lqr, horizon)
         return typs.State(X, U, Nu)
 
-    implicit = implicit_diff.custom_root(kkt)(direct)
+    implicit = implicit_diff.custom_root(kkt, solve=linear_solve.solve_cg)(direct)
     return typs.Solver(
         direct=lambda x: direct(None, x), kkt=kkt, implicit=lambda x: implicit(None, x)
     )
