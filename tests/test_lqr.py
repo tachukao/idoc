@@ -69,26 +69,26 @@ def test_lqr():
 
 
     # check along one random direction
-    check_grads(implicit_loss, (params,), 1, modes=("rev",))
+    # check_grads(implicit_loss, (params,), 1, modes=("rev",))
 
-    #direct = jax.grad(direct_loss)(params)
-    #implicit = jax.grad(implicit_loss)(params)
+    direct = jax.grad(direct_loss)(params)
+    implicit = jax.grad(implicit_loss)(params)
 
-    #pc = idoc.utils.print_and_check
-    #rd = idoc.utils.relative_difference
+    pc = idoc.utils.print_and_check
+    rd = idoc.utils.relative_difference
 
-    #print("Direct v implicit")
-    #pc(rd(direct.x0, implicit.x0))
-    #pc(rd(direct.lqr.A, implicit.lqr.A))
-    #pc(rd(direct.lqr.B, implicit.lqr.B))
-    #pc(rd(direct.lqr.d, implicit.lqr.d))
-    #pc(rd(direct.lqr.M, implicit.lqr.M))
-    #pc(rd(direct.lqr.Q, implicit.lqr.Q))
-    #pc(rd(direct.lqr.q, implicit.lqr.q))
-    #pc(rd(direct.lqr.R, implicit.lqr.R))
-    #pc(rd(direct.lqr.r, implicit.lqr.r))
-    #pc(rd(direct.lqr.Qf, implicit.lqr.Qf))
-    #pc(rd(direct.lqr.qf, implicit.lqr.qf))
+    print("Direct v implicit")
+    pc(rd(direct.x0, implicit.x0))
+    pc(rd(direct.lqr.A, implicit.lqr.A))
+    pc(rd(direct.lqr.B, implicit.lqr.B))
+    pc(rd(direct.lqr.d, implicit.lqr.d))
+    pc(rd(direct.lqr.M, implicit.lqr.M))
+    pc(rd(direct.lqr.Q, implicit.lqr.Q))
+    pc(rd(direct.lqr.q, implicit.lqr.q))
+    pc(rd(direct.lqr.R, implicit.lqr.R))
+    pc(rd(direct.lqr.r, implicit.lqr.r))
+    pc(rd(direct.lqr.Qf, implicit.lqr.Qf))
+    pc(rd(direct.lqr.qf, implicit.lqr.qf))
 
 
 if __name__ == "__main__":
