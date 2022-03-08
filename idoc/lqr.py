@@ -78,7 +78,7 @@ def backward(lqr: LQR, horizon: int) -> Gains:
     def bwd(state, inps):
         t = inps
         V, v = state
-        Gxx = Q[t] + AT[t] @ V @ A[t]
+        Gxx = symmetrize(Q[t] + AT[t] @ V @ A[t])
         Guu = symmetrize(R[t] + BT[t] @ V @ B[t])
         Gxu = M[t] + AT[t] @ V @ B[t]
         Vd = V @ d[t]
