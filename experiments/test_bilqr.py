@@ -2,10 +2,14 @@
 
 import jax.numpy as jnp
 import jax
+import jax.random as jr
+import jax.scipy as sp
 from typing import NamedTuple
 import idoc
 from jax.test_util import check_grads
-
+import os
+from idoc import bilqr
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 class Params(NamedTuple):
     Q: jnp.ndarray
@@ -17,7 +21,21 @@ class Params(NamedTuple):
     B: jnp.ndarray
 
 
-def init_theta(key, state_dim, control_dim) -> Params:
+
+def system_dimensions():
+    n = 10
+    m = 10
+    T = 10
+    return n, m, T
+
+dims = system_dimensions()
+batch_size = 5
+system_key =  jr.PRNGKey(10000)
+
+
+def init_theta() -> Params:
+    key = system_key
+    state_dim, control_dim, _ = dims
     Q = jnp.eye(state_dim)
     q = jnp.ones(state_dim) * 0.01
     Qf = jnp.eye(state_dim)
@@ -29,25 +47,27 @@ def init_theta(key, state_dim, control_dim) -> Params:
     B = jax.random.normal(subkey, (state_dim, control_dim))
     return Params(Q=Q, q=q, Qf=Qf, R=R, r=r, A=A, B=B)
 
-
+#issue doesn't arise with linear dynamics, or when Q = 0
+#probably with the "local" thing
 def init_ilqr_problem(
     state_dim: int, control_dim: int, horizon: int
-) -> idoc.ilqr.Problem:
+) -> bilqr.Problem:
     phi = lambda x : jnp.tanh(x)
     def dynamics(_, x, u, theta):
         return phi(theta.A @ x) + theta.B @ u + 0.5
 
     def cost(_, x, u, theta):
-        lQ = 0.5 * jnp.dot(jnp.dot(theta.Q, x), x)
+        lQ= 0.1*jnp.dot(jnp.dot(theta.Q, x), x)
         lq = jnp.dot(theta.q, x)
-        lR = 1e-4 * jnp.dot(jnp.dot(theta.R, u), u)
+        print(theta.R.shape, u.shape, "ushape")
+        lR = jnp.dot(jnp.dot(theta.R, u), u)
         lr = 1e-4 * jnp.dot(theta.r, u)
         return lQ + lq + lR + lr
 
     def costf(xf, theta):
         return 0.5 * jnp.dot(jnp.dot(theta.Qf, xf), xf)
 
-    return idoc.ilqr.Problem(
+    return bilqr.Problem(
         cost=cost,
         costf=costf,
         dynamics=dynamics,
@@ -57,30 +77,32 @@ def init_ilqr_problem(
     )
 
 
-def init_params(key, state_dim, control_dim) -> idoc.ilqr.Params:
+def init_params(key) -> idoc.ilqr.Params:
+    state_dim, control_dim, _ = dims
     """Initialize random parameters."""
     key, subkey = jax.random.split(key)
-    x0 = jax.random.normal(subkey, (state_dim,))
+    x0 = jax.random.normal(subkey, (batch_size, state_dim))
     key, subkey = jax.random.split(key)
-    theta = init_theta(subkey, state_dim, control_dim)
-    return idoc.ilqr.Params(x0, theta=theta)
+    theta = init_theta()
+    return bilqr.Params(x0, theta=theta)
 
 
 def test_ilqr():
     jax.config.update("jax_enable_x64", True)
     # problem dimensions
-    state_dim, control_dim, T, iterations = 2, 2, 5, 15
+    state_dim, control_dim, T = dims
+    iterations = 15
     # random key
     key = jax.random.PRNGKey(42)
     # initialize ilqr
     ilqr_problem = init_ilqr_problem(state_dim, control_dim, T)
     # initialize solvers
-    solver = idoc.ilqr.build(ilqr_problem, iterations)
+    solver = bilqr.build(ilqr_problem, iterations)
     # initialize parameters
-    params = init_params(key, state_dim, control_dim)
+    params = init_params(key)
     # initialize state
     Uinit = jnp.zeros((T, control_dim))
-    Xinit = idoc.ilqr.simulate(ilqr_problem, Uinit, params)
+    Xinit = bilqr.simulate(ilqr_problem, Uinit, params)
     sinit = idoc.typs.State(X=Xinit, U=Uinit, Nu=jnp.zeros_like(Xinit))
     # check that both solvers give the same solution
     def check_solution():
