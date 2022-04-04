@@ -125,7 +125,7 @@ def test_ilqr():
         return loss(s, params)
 
     # check along one random direction
-    check_grads(implicit_loss, (params,), 1, modes=("rev",))
+    check_grads(implicit_loss, (params,), 1, modes=("rev",), atol=0.1, rtol=1E-3)
 
     direct = jax.grad(direct_loss)(params)
     implicit = jax.grad(implicit_loss)(params)

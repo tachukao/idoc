@@ -95,7 +95,6 @@ def batch_lqr_step(V, v, Q, q, R, r, M, A, B, d, delta=1e-8):
     G_ = G + jnp.maximum(0.0, delta - S[0]) * jnp.eye(G.shape[0])
 
     H = BtVA + M  # (batch_size, m, n)
-    print(r.shape, jnp.einsum("ijk,ij", B, v).shape, "shapes")
     h = jnp.einsum("ijk,ij", B, v) + jnp.einsum("ijk,jk", BtV, d) + jnp.sum(r, axis=0) #(batch size, m)
     vlinsolve = jax.vmap(
         lambda x, y: sp.linalg.solve(x, y, sym_pos=True), in_axes=(None, 0)
@@ -148,10 +147,8 @@ def adjoint(X, U, lqr: BLQR, horizon: int) -> jnp.ndarray:
     def adj(_nu, _t):
         t = horizon - _t
         nu = jnp.einsum("ijk,ij-> ik", A[t], _nu) + jnp.einsum("ijk,ik -> ij", Q[t], X[t-1]) + q[t] + jnp.einsum("ijk,j->k", M[t], U[t])
-        print(nu.shape, jnp.einsum("ijk,j->ik", M[t], U[t]).shape)
         #nu = AT[t] @ _nu + Q[t] @ X[t - 1] + q[t] + M[t] @ U[t]
         return nu, _nu
-    print("Qf, X", Qf.shape, X[-1].shape, qf.shape)
     nuf = jax.vmap(jnp.matmul,in_axes=(0,0))(Qf,X[-1]) + qf
     nu0, _Nu = lax.scan(adj, nuf, jnp.arange(1, horizon))
     Nu = jnp.concatenate((_Nu, nu0[None, ...]), axis=0)
