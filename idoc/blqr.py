@@ -1,4 +1,4 @@
-"""Differentiable LQR (finite horizon, discrete time, time-invariant) 
+"""Differentiable batch LQR (finite horizon, discrete time, time-invariant) 
 """
 
 import flax

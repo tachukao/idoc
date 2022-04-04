@@ -1,4 +1,4 @@
-"""Differentiable iLQR
+"""Differentiable batch iLQR
 """
 
 import jax
@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from jaxopt import implicit_diff, linear_solve
 from typing import Callable, Any, Optional, NamedTuple
 import flax
-from . import lqr, typs, batch_lqr
+from . import blqr, lqr, typs
 import functools
 from dataclasses import dataclass
 
@@ -74,7 +74,7 @@ def make_lqr_approx(cs: Problem, params: Params, local=True) -> Callable:
 
         return Q, q, R, r, M, A, B, d
 
-    def approx(X, U) -> batch_lqr.BLQR:
+    def approx(X, U) -> blqr.BLQR:
         sX = jnp.concatenate((x0[None, ...], X[:-1]))
         xf = X[-1]
         Q, q, R, r, M, A, B, d = approx_timestep(jnp.arange(T), sX, U)
@@ -82,7 +82,7 @@ def make_lqr_approx(cs: Problem, params: Params, local=True) -> Callable:
         qf = jax.vmap(jax.grad(cs.costf, argnums=0), in_axes=(0,None))(xf, theta)
         if not local:
             qf = qf - jax.vmap(jnp.matmul,in_axes = (0,0))(Qf,xf)
-        return batch_lqr.BLQR(Q=Q, q=q, R=R, r=r, M=M, A=A, B=B, Qf=Qf, qf=qf, d=d)
+        return blqr.BLQR(Q=Q, q=q, R=R, r=r, M=M, A=A, B=B, Qf=Qf, qf=qf, d=d)
 
     return approx
 
@@ -111,12 +111,12 @@ def build(cs: Problem, iterations: int) -> typs.Solver:
 
     def kkt(s: typs.State, params: Params) -> typs.State:
         p = make_lqr_approx(cs, params, local=False)(s.X, s.U)
-        return batch_lqr.kkt(s, batch_lqr.Params(x0=params.x0, blqr=p))
+        return blqr.kkt(s, blqr.Params(x0=params.x0, blqr=p))
 
     def update(
         X: jnp.ndarray,
         U: jnp.ndarray,
-        gains: batch_lqr.Gains,
+        gains: blqr.Gains,
         params: Params,
     ):
         x0, theta = params.x0, params.theta
@@ -147,14 +147,14 @@ def build(cs: Problem, iterations: int) -> typs.Solver:
         def loop(z, _):
             X, U = z
             p = lqr_approx_local(X, U)
-            gains = batch_lqr.backward(p, T)
+            gains = blqr.backward(p, T)
             nX, nU, l = update(X, U, gains, params)
             return (nX, nU), l
 
         (X, U), L = lax.scan(loop, (init.X, init.U), jnp.arange(iterations))
         print(L)
         p = lqr_approx_global(X, U)
-        Nu = batch_lqr.adjoint(X, U, p, T)
+        Nu = blqr.adjoint(X, U, p, T)
         return typs.State(X=X, U=U, Nu=Nu)
 
     implicit_ilqr = implicit_diff.custom_root(kkt, solve=linear_solve.solve_cg)(ilqr)
