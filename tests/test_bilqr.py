@@ -59,7 +59,6 @@ def init_ilqr_problem(
     def cost(_, x, u, theta):
         lQ= 0.1*jnp.dot(jnp.dot(theta.Q, x), x)
         lq = jnp.dot(theta.q, x)
-        print(theta.R.shape, u.shape, "ushape")
         lR = jnp.dot(jnp.dot(theta.R, u), u)
         lr = 1e-4 * jnp.dot(theta.r, u)
         return lQ + lq + lR + lr
@@ -126,25 +125,25 @@ def test_ilqr():
         return loss(s, params)
 
     # check along one random direction
-    check_grads(implicit_loss, (params,), 1, modes=("rev",))
+    check_grads(implicit_loss, (params,), 1, modes=("rev",), atol=0.1, rtol=1E-3)
 
-    # direct = jax.grad(direct_loss)(params)
-    # implicit = jax.grad(implicit_loss)(params)
+    direct = jax.grad(direct_loss)(params)
+    implicit = jax.grad(implicit_loss)(params)
 
-    # pc = idoc.utils.print_and_check
-    # rd = idoc.utils.relative_difference
+    pc = idoc.utils.print_and_check
+    rd = idoc.utils.relative_difference
 
 
-    # print("Direct v implicit")
+    print("Direct v implicit")
 
-    # pc(rd(direct.x0, implicit.x0))
-    # pc(rd(direct.theta.A, implicit.theta.A))
-    # pc(rd(direct.theta.B, implicit.theta.B))
-    # pc(rd(direct.theta.Q, implicit.theta.Q))
-    # pc(rd(direct.theta.Qf, implicit.theta.Qf))
-    # pc(rd(direct.theta.q, implicit.theta.q))
-    # pc(rd(direct.theta.R, implicit.theta.R))
-    # pc(rd(direct.theta.r, implicit.theta.r))
+    pc(rd(direct.x0, implicit.x0))
+    pc(rd(direct.theta.A, implicit.theta.A))
+    pc(rd(direct.theta.B, implicit.theta.B))
+    pc(rd(direct.theta.Q, implicit.theta.Q))
+    pc(rd(direct.theta.Qf, implicit.theta.Qf))
+    pc(rd(direct.theta.q, implicit.theta.q))
+    pc(rd(direct.theta.R, implicit.theta.R))
+    pc(rd(direct.theta.r, implicit.theta.r))
 
     # findiff = idoc.utils.finite_difference_grad(direct_loss, params)
     # print("Implicit v Finite Difference")
