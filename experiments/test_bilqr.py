@@ -8,7 +8,7 @@ from typing import NamedTuple
 import idoc
 from jax.test_util import check_grads
 import os
-from idoc import batch_ilqr as bilqr
+from idoc import bilqr
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 class Params(NamedTuple):
