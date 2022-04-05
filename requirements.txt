@@ -1,6 +1,9 @@
 .
 jax
 jaxopt
+flax
+scipy
+scikit-learn
 numpy
 pytest
 pytest-cov
