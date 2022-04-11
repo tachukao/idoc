@@ -2,7 +2,7 @@
 """
 
 import jax
-from jax import lax, vmap
+from jax import lax, vmap, jacfwd, jacobian, grad
 import jax.numpy as jnp
 import jaxopt
 from jaxopt import implicit_diff, linear_solve
@@ -12,11 +12,7 @@ from . import blqr, lqr, typs
 import functools
 from dataclasses import dataclass
 
-mm = jax.vmap(jnp.matmul)
-
-
-def vmap_grad(f, argnums=0):
-    return jax.vmap(jax.grad(f, argnums=argnums))
+mm = vmap(jnp.matmul)
 
 
 @dataclass
@@ -56,39 +52,23 @@ def make_lqr_approx(cs: Problem, params: Params, local=True) -> Callable:
     """Create LQR approximation function"""
     T = cs.horizon
     x0, theta = params.x0, params.theta
+    vm = lambda f: vmap(f, in_axes=(None, 0, None, None))
 
-    @jax.vmap
+    @vmap
     def approx_timestep(t, x, u):
         # here : add the vmaps : x is of size BxN
-        M = jax.vmap(
-            jax.jacfwd(jax.grad(cs.cost, argnums=1), argnums=2),
-            in_axes=(None, 0, None, None),
-        )(t, x, u, theta)
-        R = jax.vmap(
-            jax.jacfwd(jax.grad(cs.cost, argnums=2), argnums=2),
-            in_axes=(None, 0, None, None),
-        )(t, x, u, theta).sum(0)
-        q = jax.vmap(jax.grad(cs.cost, argnums=1), in_axes=(None, 0, None, None))(
-            t, x, u, theta
-        )
-        Q = jax.vmap(
-            jax.jacfwd(jax.grad(cs.cost, argnums=1), argnums=1),
-            in_axes=(None, 0, None, None),
-        )(t, x, u, theta)
-        r = jax.vmap(jax.grad(cs.cost, argnums=2), in_axes=(None, 0, None, None))(
-            t, x, u, theta
-        ).sum(0)
-        A = jax.vmap(
-            jax.jacobian(cs.dynamics, argnums=(1)), in_axes=(None, 0, None, None)
-        )(t, x, u, theta)
-        B = jax.vmap(
-            jax.jacobian(cs.dynamics, argnums=2), in_axes=(None, 0, None, None)
-        )(t, x, u, theta)
+        M = vm(jacfwd(grad(cs.cost, argnums=1), argnums=2))(t, x, u, theta)
+        R = vm(jacfwd(grad(cs.cost, argnums=2), argnums=2))(t, x, u, theta).sum(0)
+        q = vm(grad(cs.cost, argnums=1))(t, x, u, theta)
+        Q = vm(jacfwd(grad(cs.cost, argnums=1), argnums=1))(t, x, u, theta)
+        r = vm(grad(cs.cost, argnums=2))(t, x, u, theta).sum(0)
+        A = vm(jacobian(cs.dynamics, argnums=(1)))(t, x, u, theta)
+        B = vm(jacobian(cs.dynamics, argnums=2))(t, x, u, theta)
         if not local:
             q = q - jnp.einsum("ijk,ik->ij", Q, x) - jnp.einsum("ijk,k", M, u)
             r = r - R @ u - jnp.einsum("ijk,ij -> ik", M, x).sum(0)
             d = (
-                jax.vmap(cs.dynamics, in_axes=(None, 0, None, None))(t, x, u, theta)
+                vm(cs.dynamics)(t, x, u, theta)
                 - jnp.einsum("ijk,ik->ij", A, x)
                 - jnp.einsum("ijk,k->ij", B, u)
             )
@@ -101,12 +81,12 @@ def make_lqr_approx(cs: Problem, params: Params, local=True) -> Callable:
         sX = jnp.concatenate((x0[None, ...], X[:-1]))
         xf = X[-1]
         Q, q, R, r, M, A, B, d = approx_timestep(jnp.arange(T), sX, U)
-        Qf = jax.vmap(
-            jax.jacfwd(jax.grad(cs.costf, argnums=0), argnums=0), in_axes=(0, None)
-        )(xf, theta)
-        qf = jax.vmap(jax.grad(cs.costf, argnums=0), in_axes=(0, None))(xf, theta)
+        Qf = vmap(jacfwd(grad(cs.costf, argnums=0), argnums=0), in_axes=(0, None))(
+            xf, theta
+        )
+        qf = vmap(grad(cs.costf, argnums=0), in_axes=(0, None))(xf, theta)
         if not local:
-            qf = qf - jax.vmap(jnp.matmul, in_axes=(0, 0))(Qf, xf)
+            qf = qf - vmap(jnp.matmul, in_axes=(0, 0))(Qf, xf)
         return blqr.BLQR(Q=Q, q=q, R=R, r=r, M=M, A=A, B=B, Qf=Qf, qf=qf, d=d)
 
     return approx
@@ -116,10 +96,10 @@ def simulate(cs: Problem, U: jnp.ndarray, params: Params) -> jnp.ndarray:
     """Simulates state trajectory"""
     x0 = params.x0
     T = U.shape[0]
-    cost = jax.vmap(cs.cost, in_axes=(None, 0, None, None))
-    costf = jax.vmap(cs.costf, in_axes=(0, None))
+    cost = vmap(cs.cost, in_axes=(None, 0, None, None))
+    costf = vmap(cs.costf, in_axes=(0, None))
 
-    @functools.partial(jax.vmap, in_axes=(None, 0, None))
+    @functools.partial(vmap, in_axes=(None, 0, None))
     def batch_dyn(t, x, u):
         return cs.dynamics(t, x, u, params.theta)
 
@@ -169,17 +149,17 @@ def build(
             du = jnp.sum((mm(gain.K, dx)), axis=0) + alpha * gain.k  # check as well
             uhat = u + du
             nl = l + jnp.sum(
-                jax.vmap(cs.cost, in_axes=(None, 0, None, None))(t, xhat, uhat, theta),
+                vmap(cs.cost, in_axes=(None, 0, None, None))(t, xhat, uhat, theta),
                 axis=0,
             )
-            nxhat = jax.vmap(cs.dynamics, in_axes=(None, 0, None, None))(
+            nxhat = vmap(cs.dynamics, in_axes=(None, 0, None, None))(
                 t, xhat, uhat, theta
             )
             return (nxhat, nl), (nxhat, uhat)
 
         inps = jnp.arange(T), gains, sX, U
         (xf, nl), (X, U) = lax.scan(fwd, (x0, 0), inps)
-        l = nl + jnp.sum(jax.vmap(cs.costf, in_axes=(0, None))(xf, theta), axis=0)
+        l = nl + jnp.sum(vmap(cs.costf, in_axes=(0, None))(xf, theta), axis=0)
         return X, U, l
 
     def ilqr(
