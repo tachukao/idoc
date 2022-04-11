@@ -70,7 +70,7 @@ def init_params(key, state_dim, control_dim) -> idoc.ilqr.Params:
 def test_ilqr():
     jax.config.update("jax_enable_x64", True)
     # problem dimensions
-    state_dim, control_dim, T, maxiter = 2, 2, 5, 15
+    state_dim, control_dim, T, maxiter = 2, 2, 5, 30
     # random key
     key = jax.random.PRNGKey(42)
     # initialize ilqr
@@ -80,13 +80,13 @@ def test_ilqr():
         ilqr_problem,
         thres=1e-8,
         maxiter=maxiter,
-        line_search=idoc.ilqr.make_line_search(),
+        line_search=idoc.make_line_search(),
     )
     # initialize parameters
     params = init_params(key, state_dim, control_dim)
     # initialize state
     Uinit = jnp.zeros((T, control_dim))
-    Xinit = idoc.ilqr.simulate(ilqr_problem, Uinit, params)
+    Xinit, _ = idoc.ilqr.simulate(ilqr_problem, Uinit, params)
     sinit = idoc.typs.State(X=Xinit, U=Uinit, Nu=jnp.zeros_like(Xinit))
 
     # check that both solvers give the same solution
@@ -98,22 +98,22 @@ def test_ilqr():
 
     check_solution()
 
+    # check that the gradients match between two solvers
+    def loss(s, params):
+        return 1.0 * jnp.sum(s.X ** 2) + 0.5 * jnp.sum(s.U ** 2)
+
+    def direct_loss(params):
+        s = solver.direct(sinit, params)
+        return loss(s, params)
+
+    def implicit_loss(params):
+        s = solver.implicit(sinit, params)
+        return loss(s, params)
+
+    # check along one random direction
+    check_grads(implicit_loss, (params,), 1, modes=("rev",))
+
     # LONG Checks
-
-    # # check that the gradients match between two solvers
-    # def loss(s, params):
-    #     return 1.0 * jnp.sum(s.X ** 2) + 0.5 * jnp.sum(s.U ** 2)
-
-    # def direct_loss(params):
-    #     s = solver.direct(sinit, params)
-    #     return loss(s, params)
-
-    # def implicit_loss(params):
-    #     s = solver.implicit(sinit, params)
-    #     return loss(s, params)
-
-    # # check along one random direction
-    # check_grads(implicit_loss, (params,), 1, modes=("rev",))
 
     # direct = jax.grad(direct_loss)(params)
     # implicit = jax.grad(implicit_loss)(params)

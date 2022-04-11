@@ -4,6 +4,7 @@
 import jax
 from jax import lax, vmap
 import jax.numpy as jnp
+import jaxopt
 from jaxopt import implicit_diff, linear_solve
 from typing import Callable, Any, Optional, NamedTuple
 import flax
@@ -60,16 +61,13 @@ def make_lqr_approx(cs: Problem, params: Params, local=True) -> Callable:
     def approx_timestep(t, x, u):
         # here : add the vmaps : x is of size BxN
         M = jax.vmap(
-            jax.jacfwd(jax.grad(cs.cost, argnums=2), argnums=1),
+            jax.jacfwd(jax.grad(cs.cost, argnums=1), argnums=2),
             in_axes=(None, 0, None, None),
         )(t, x, u, theta)
-        R = jnp.sum(
-            jax.vmap(
-                jax.jacfwd(jax.grad(cs.cost, argnums=2), argnums=2),
-                in_axes=(None, 0, None, None),
-            )(t, x, u, theta),
-            axis=0,
-        )
+        R = jax.vmap(
+            jax.jacfwd(jax.grad(cs.cost, argnums=2), argnums=2),
+            in_axes=(None, 0, None, None),
+        )(t, x, u, theta).sum(0)
         q = jax.vmap(jax.grad(cs.cost, argnums=1), in_axes=(None, 0, None, None))(
             t, x, u, theta
         )
@@ -79,7 +77,7 @@ def make_lqr_approx(cs: Problem, params: Params, local=True) -> Callable:
         )(t, x, u, theta)
         r = jax.vmap(jax.grad(cs.cost, argnums=2), in_axes=(None, 0, None, None))(
             t, x, u, theta
-        )
+        ).sum(0)
         A = jax.vmap(
             jax.jacobian(cs.dynamics, argnums=(1)), in_axes=(None, 0, None, None)
         )(t, x, u, theta)
@@ -87,12 +85,8 @@ def make_lqr_approx(cs: Problem, params: Params, local=True) -> Callable:
             jax.jacobian(cs.dynamics, argnums=2), in_axes=(None, 0, None, None)
         )(t, x, u, theta)
         if not local:
-            q = (
-                q - jnp.einsum("ijk,ik->ij", Q, x) - jnp.einsum("ijk,j", M, u)
-            )  # shapes will be wrong, need to print to be sure
-            # want something of size TxBxn : might need to specify axes of None for some things
-            r = r - R @ u - jnp.einsum("ijk,ik -> j", M, x)
-            # so actually we need r of size Bxm
+            q = q - jnp.einsum("ijk,ik->ij", Q, x) - jnp.einsum("ijk,k", M, u)
+            r = r - R @ u - jnp.einsum("ijk,ij -> ik", M, x).sum(0)
             d = (
                 jax.vmap(cs.dynamics, in_axes=(None, 0, None, None))(t, x, u, theta)
                 - jnp.einsum("ijk,ik->ij", A, x)
@@ -122,6 +116,8 @@ def simulate(cs: Problem, U: jnp.ndarray, params: Params) -> jnp.ndarray:
     """Simulates state trajectory"""
     x0 = params.x0
     T = U.shape[0]
+    cost = jax.vmap(cs.cost, in_axes=(None, 0, None, None))
+    costf = jax.vmap(cs.costf, in_axes=(0, None))
 
     @functools.partial(jax.vmap, in_axes=(None, 0, None))
     def batch_dyn(t, x, u):
@@ -129,16 +125,26 @@ def simulate(cs: Problem, U: jnp.ndarray, params: Params) -> jnp.ndarray:
 
     def fwd(state, inp):
         t, u = inp
-        x = state
+        c, x = state
+        c = c + cost(t, x, u, params.theta).sum()
         nx = batch_dyn(t, x, u)
-        return nx, nx
+        return (c, nx), nx
 
     inps = jnp.arange(T), U
-    _, X = lax.scan(fwd, x0, inps)
-    return X
+    (c, xf), X = lax.scan(fwd, (0.0, x0), inps)
+    c = c + costf(xf, params.theta).sum()
+    return X, c
 
 
-def build(cs: Problem, iterations: int) -> typs.Solver:
+def build(
+    cs: Problem,
+    *,
+    maxiter: int = 100,
+    thres: float = 1e-8,
+    line_search=None,
+    unroll: bool = False,
+    jit: bool = True
+) -> typs.Solver:
     """Build iLQR solver"""
     T = cs.horizon
 
@@ -151,6 +157,7 @@ def build(cs: Problem, iterations: int) -> typs.Solver:
         U: jnp.ndarray,
         gains: blqr.Gains,
         params: Params,
+        alpha: float = 1.0,
     ):
         x0, theta = params.x0, params.theta
         sX = jnp.concatenate((x0[None, ...], X[:-1]))
@@ -159,7 +166,7 @@ def build(cs: Problem, iterations: int) -> typs.Solver:
             xhat, l = state
             t, gain, x, u = inp
             dx = xhat - x
-            du = jnp.sum((mm(gain.K, dx)), axis=0) + gain.k  # check as well
+            du = jnp.sum((mm(gain.K, dx)), axis=0) + alpha * gain.k  # check as well
             uhat = u + du
             nl = l + jnp.sum(
                 jax.vmap(cs.cost, in_axes=(None, 0, None, None))(t, xhat, uhat, theta),
@@ -182,15 +189,36 @@ def build(cs: Problem, iterations: int) -> typs.Solver:
         lqr_approx_global = make_lqr_approx(cs, params, local=False)
         lqr_approx_local = make_lqr_approx(cs, params, local=True)
 
-        def loop(z, _):
-            X, U = z
-            p = lqr_approx_local(X, U)
-            gains = blqr.backward(p, T)
-            nX, nU, l = update(X, U, gains, params)
-            return (nX, nU), l
+        def loop(val):
+            X_old, U_old, c_old, _ = val
+            p = lqr_approx_local(X_old, U_old)
+            gains, expected_change = blqr.backward(p, T, return_expected_change=True)
 
-        (X, U), L = lax.scan(loop, (init.X, init.U), jnp.arange(iterations))
-        print(L)
+            def f(alpha):
+                return update(X_old, U_old, gains, params, alpha=alpha)
+
+            if line_search is None:
+                (nX, nU, nc) = f(1.0)
+            else:
+                (nX, nU, nc) = line_search(
+                    f, c_old, expected_change, unroll=unroll, jit=jit
+                )
+
+            pct_change = abs((c_old - nc) / c_old)
+            carry_on = pct_change > thres
+            new_val = nX, nU, nc, carry_on
+            return new_val
+
+        U = init.U
+        _, c_old = simulate(cs, U, params)
+        X, U, c, _ = jaxopt.loop.while_loop(
+            lambda v: v[-1],
+            loop,
+            (init.X, init.U, c_old, True),
+            maxiter=maxiter,
+            unroll=unroll,
+            jit=jit,
+        )
         p = lqr_approx_global(X, U)
         Nu = blqr.adjoint(X, U, p, T)
         return typs.State(X=X, U=U, Nu=Nu)
