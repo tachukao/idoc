@@ -10,7 +10,6 @@ from jaxopt import implicit_diff, linear_solve
 from typing import Callable, NamedTuple
 from . import typs
 
-
 mm = jax.vmap(jnp.matmul)
 
 

@@ -9,6 +9,7 @@ from typing import NamedTuple
 
 class QP(NamedTuple):
     """QP specs"""
+
     Q: jnp.ndarray
     c: jnp.ndarray
     E: jnp.ndarray

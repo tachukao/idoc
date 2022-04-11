@@ -12,7 +12,7 @@ def init_lqr(key, state_dim: int, control_dim: int, horizon: int) -> idoc.lqr.LQ
     q = 0.2 * jnp.stack(horizon * (jnp.ones(state_dim),))
     Qf = jnp.eye(state_dim)
     qf = 0.2 * jnp.ones((state_dim,))
-    R = 1e-4 * jnp.stack(horizon * (jnp.eye(control_dim),)) 
+    R = 1e-4 * jnp.stack(horizon * (jnp.eye(control_dim),))
     r = 1e-4 * jnp.stack(horizon * (jnp.ones(control_dim),))
     M = 1e-4 * jnp.stack(horizon * (jnp.ones((state_dim, control_dim)),))
     key, subkey = jax.random.split(key)
@@ -66,7 +66,6 @@ def test_lqr():
         params = idoc.lqr.Params(params.x0, params.lqr.symm())
         s = solver.implicit(params)
         return loss(s, params)
-
 
     # check along one random direction
     # check_grads(implicit_loss, (params,), 1, modes=("rev",))

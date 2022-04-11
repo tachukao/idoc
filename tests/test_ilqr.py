@@ -33,7 +33,8 @@ def init_theta(key, state_dim, control_dim) -> Params:
 def init_ilqr_problem(
     state_dim: int, control_dim: int, horizon: int
 ) -> idoc.ilqr.Problem:
-    phi = lambda x : jnp.tanh(x)
+    phi = lambda x: jnp.tanh(x)
+
     def dynamics(_, x, u, theta):
         return phi(theta.A @ x) + theta.B @ u + 0.5
 
@@ -82,10 +83,11 @@ def test_ilqr():
     Uinit = jnp.zeros((T, control_dim))
     Xinit = idoc.ilqr.simulate(ilqr_problem, Uinit, params)
     sinit = idoc.typs.State(X=Xinit, U=Uinit, Nu=jnp.zeros_like(Xinit))
+
     # check that both solvers give the same solution
     def check_solution():
         for k, solve in [("direct", solver.direct), ("implicit", solver.implicit)]:
-            #print(k)
+            # print(k)
             s = solve(sinit, params)
             idoc.utils.check_kkt(solver.kkt, s, params)
 
@@ -111,7 +113,6 @@ def test_ilqr():
 
     pc = idoc.utils.print_and_check
     rd = idoc.utils.relative_difference
-
 
     print("Direct v implicit")
 

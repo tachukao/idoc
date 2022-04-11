@@ -9,7 +9,9 @@ import idoc
 from jax.test_util import check_grads
 import os
 from idoc import bilqr
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+
 
 class Params(NamedTuple):
     Q: jnp.ndarray
@@ -21,16 +23,16 @@ class Params(NamedTuple):
     B: jnp.ndarray
 
 
-
 def system_dimensions():
     n = 10
     m = 10
     T = 10
     return n, m, T
 
+
 dims = system_dimensions()
 batch_size = 5
-system_key =  jr.PRNGKey(10000)
+system_key = jr.PRNGKey(10000)
 
 
 def init_theta() -> Params:
@@ -47,17 +49,17 @@ def init_theta() -> Params:
     B = jax.random.normal(subkey, (state_dim, control_dim))
     return Params(Q=Q, q=q, Qf=Qf, R=R, r=r, A=A, B=B)
 
-#issue doesn't arise with linear dynamics, or when Q = 0
-#probably with the "local" thing
-def init_ilqr_problem(
-    state_dim: int, control_dim: int, horizon: int
-) -> bilqr.Problem:
-    phi = lambda x : jnp.tanh(x)
+
+# issue doesn't arise with linear dynamics, or when Q = 0
+# probably with the "local" thing
+def init_ilqr_problem(state_dim: int, control_dim: int, horizon: int) -> bilqr.Problem:
+    phi = lambda x: jnp.tanh(x)
+
     def dynamics(_, x, u, theta):
         return phi(theta.A @ x) + theta.B @ u + 0.5
 
     def cost(_, x, u, theta):
-        lQ= 0.1*jnp.dot(jnp.dot(theta.Q, x), x)
+        lQ = 0.1 * jnp.dot(jnp.dot(theta.Q, x), x)
         lq = jnp.dot(theta.q, x)
         lR = jnp.dot(jnp.dot(theta.R, u), u)
         lr = 1e-4 * jnp.dot(theta.r, u)
@@ -103,10 +105,11 @@ def test_ilqr():
     Uinit = jnp.zeros((T, control_dim))
     Xinit = bilqr.simulate(ilqr_problem, Uinit, params)
     sinit = idoc.typs.State(X=Xinit, U=Uinit, Nu=jnp.zeros_like(Xinit))
+
     # check that both solvers give the same solution
     def check_solution():
         for k, solve in [("direct", solver.direct), ("implicit", solver.implicit)]:
-            #print(k)
+            # print(k)
             s = solve(sinit, params)
             idoc.utils.check_kkt(solver.kkt, s, params)
 
@@ -125,14 +128,13 @@ def test_ilqr():
         return loss(s, params)
 
     # check along one random direction
-    check_grads(implicit_loss, (params,), 1, modes=("rev",), atol=0.1, rtol=1E-3)
+    check_grads(implicit_loss, (params,), 1, modes=("rev",), atol=0.1, rtol=1e-3)
 
     direct = jax.grad(direct_loss)(params)
     implicit = jax.grad(implicit_loss)(params)
 
     pc = idoc.utils.print_and_check
     rd = idoc.utils.relative_difference
-
 
     print("Direct v implicit")
 
