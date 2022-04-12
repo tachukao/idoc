@@ -39,7 +39,7 @@ def print_and_check(err, thres=1e-3):
     assert err < thres
 
 
-def finite_difference_grad(f, x, method='3-point', eps=1e-8):
+def finite_difference_grad(f, x, method="3-point", eps=1e-8):
     """Computes finite difference gradient"""
     flat_x, unravel = flatten_util.ravel_pytree(x)
 

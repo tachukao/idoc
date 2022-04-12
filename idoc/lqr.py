@@ -10,7 +10,6 @@ from jaxopt import implicit_diff, linear_solve
 from typing import Callable, NamedTuple
 from . import typs
 
-
 mm = jax.vmap(jnp.matmul)
 
 
@@ -60,7 +59,7 @@ class Params(NamedTuple):
     lqr: LQR
 
 
-def backward(lqr: LQR, horizon: int) -> Gains:
+def backward(lqr: LQR, horizon: int, *, return_expected_change: bool = False) -> Gains:
     """LQR backward pass
 
     Returns Gains used in the forward pass
@@ -77,7 +76,7 @@ def backward(lqr: LQR, horizon: int) -> Gains:
 
     def bwd(state, inps):
         t = inps
-        V, v = state
+        V, v, dC, dc = state
         Gxx = symmetrize(Q[t] + AT[t] @ V @ A[t])
         Guu = symmetrize(R[t] + BT[t] @ V @ B[t])
         Gxu = M[t] + AT[t] @ V @ B[t]
@@ -89,10 +88,21 @@ def backward(lqr: LQR, horizon: int) -> Gains:
         k = -jax.scipy.linalg.solve(Gtuu, gu)
         V = symmetrize(Gxx + Gxu @ K + K.T @ Gxu.T + K.T @ Guu @ K)
         v = gx + Gxu @ k + K.T @ gu + K.T @ Guu @ k
-        return (V, v), (K, k)
+        dC = dC + 0.5 * jnp.dot(jnp.dot(Guu, k), k)
+        dc = dc + jnp.dot(gu, k)
+        return (V, v, dC, dc), (K, k)
 
-    _, (Ks, ks) = lax.scan(bwd, (Qf, qf), jnp.flip(jnp.arange(horizon)))
-    return Gains(K=jnp.flip(Ks, axis=0), k=jnp.flip(ks, axis=0))
+    (_, _, dC, dc), (Ks, ks) = lax.scan(
+        bwd, (Qf, qf, 0.0, 0.0), jnp.flip(jnp.arange(horizon))
+    )
+    gains = Gains(K=jnp.flip(Ks, axis=0), k=jnp.flip(ks, axis=0))
+    if not return_expected_change:
+        return gains
+
+    def expected_change(alpha):
+        return ((alpha ** 2) * dC) + (alpha * dc)
+
+    return gains, expected_change
 
 
 def adjoint(X, U, lqr: LQR, horizon: int) -> jnp.ndarray:

@@ -9,7 +9,9 @@ import idoc
 from jax.test_util import check_grads
 import os
 from idoc import bilqr
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+
 
 class Params(NamedTuple):
     Q: jnp.ndarray
@@ -21,16 +23,16 @@ class Params(NamedTuple):
     B: jnp.ndarray
 
 
-
 def system_dimensions():
-    n = 10
-    m = 10
+    n = 3
+    m = 2
     T = 10
     return n, m, T
 
+
 dims = system_dimensions()
-batch_size = 5
-system_key =  jr.PRNGKey(10000)
+batch_size = 30
+system_key = jr.PRNGKey(10000)
 
 
 def init_theta() -> Params:
@@ -39,29 +41,30 @@ def init_theta() -> Params:
     Q = jnp.eye(state_dim)
     q = jnp.ones(state_dim) * 0.01
     Qf = jnp.eye(state_dim)
-    R = jnp.eye(control_dim) * 0.01
-    r = jnp.ones(control_dim) * 0.01
+    R = jnp.eye(control_dim)
+    r = jnp.ones(control_dim)
     key, subkey = jax.random.split(key)
     A = idoc.utils.init_stable(subkey, state_dim)
     key, subkey = jax.random.split(key)
     B = jax.random.normal(subkey, (state_dim, control_dim))
     return Params(Q=Q, q=q, Qf=Qf, R=R, r=r, A=A, B=B)
 
-#issue doesn't arise with linear dynamics, or when Q = 0
-#probably with the "local" thing
-def init_ilqr_problem(
-    state_dim: int, control_dim: int, horizon: int
-) -> bilqr.Problem:
-    phi = lambda x : jnp.tanh(x)
+
+def init_ilqr_problem(state_dim: int, control_dim: int, horizon: int) -> bilqr.Problem:
+    phi = lambda x: jnp.tanh(x)
+
     def dynamics(_, x, u, theta):
         return phi(theta.A @ x) + theta.B @ u + 0.5
 
     def cost(_, x, u, theta):
-        lQ= 0.1*jnp.dot(jnp.dot(theta.Q, x), x)
+        n = x.shape[-1]
+        m = u.shape[-1]
+        lQ = jnp.dot(jnp.dot(theta.Q, x), x)
         lq = jnp.dot(theta.q, x)
-        lR = jnp.dot(jnp.dot(theta.R, u), u)
-        lr = 1e-4 * jnp.dot(theta.r, u)
-        return lQ + lq + lR + lr
+        lR = 1e-6 * jnp.dot(jnp.dot(theta.R, u), u)
+        lM = -1e-4 * jnp.dot(jnp.dot(jnp.ones((n, m)), u), x)
+        lr = 1e-6 * jnp.dot(theta.r, u)
+        return lQ + lq + lR + lr + lM
 
     def costf(xf, theta):
         return 0.5 * jnp.dot(jnp.dot(theta.Qf, xf), xf)
@@ -90,23 +93,27 @@ def test_ilqr():
     jax.config.update("jax_enable_x64", True)
     # problem dimensions
     state_dim, control_dim, T = dims
-    iterations = 15
+    maxiter = 30
     # random key
     key = jax.random.PRNGKey(42)
     # initialize ilqr
     ilqr_problem = init_ilqr_problem(state_dim, control_dim, T)
+    line_search = idoc.make_line_search()
     # initialize solvers
-    solver = bilqr.build(ilqr_problem, iterations)
+    solver = bilqr.build(
+        ilqr_problem, maxiter=maxiter, thres=1e-8, line_search=line_search
+    )
     # initialize parameters
     params = init_params(key)
     # initialize state
     Uinit = jnp.zeros((T, control_dim))
-    Xinit = bilqr.simulate(ilqr_problem, Uinit, params)
+    Xinit, _ = bilqr.simulate(ilqr_problem, Uinit, params)
     sinit = idoc.typs.State(X=Xinit, U=Uinit, Nu=jnp.zeros_like(Xinit))
+
     # check that both solvers give the same solution
     def check_solution():
         for k, solve in [("direct", solver.direct), ("implicit", solver.implicit)]:
-            #print(k)
+            # print(k)
             s = solve(sinit, params)
             idoc.utils.check_kkt(solver.kkt, s, params)
 
@@ -114,7 +121,7 @@ def test_ilqr():
 
     # check that the gradients match between two solvers
     def loss(s, params):
-        return 1.0 * jnp.sum(s.X ** 2) + 0.5 * jnp.sum(s.U ** 2)
+        return jnp.sum(s.X ** 2) + 0.5 * jnp.sum(s.U ** 2)
 
     def direct_loss(params):
         s = solver.direct(sinit, params)
@@ -125,25 +132,26 @@ def test_ilqr():
         return loss(s, params)
 
     # check along one random direction
-    check_grads(implicit_loss, (params,), 1, modes=("rev",), atol=0.1, rtol=1E-3)
+    check_grads(implicit_loss, (params,), 1, modes=("rev",))
 
-    direct = jax.grad(direct_loss)(params)
-    implicit = jax.grad(implicit_loss)(params)
+    # LONG checks
 
-    pc = idoc.utils.print_and_check
-    rd = idoc.utils.relative_difference
+    # direct = jax.grad(direct_loss)(params)
+    # implicit = jax.grad(implicit_loss)(params)
 
+    # pc = idoc.utils.print_and_check
+    # rd = idoc.utils.relative_difference
 
-    print("Direct v implicit")
+    # print("Direct v implicit")
 
-    pc(rd(direct.x0, implicit.x0))
-    pc(rd(direct.theta.A, implicit.theta.A))
-    pc(rd(direct.theta.B, implicit.theta.B))
-    pc(rd(direct.theta.Q, implicit.theta.Q))
-    pc(rd(direct.theta.Qf, implicit.theta.Qf))
-    pc(rd(direct.theta.q, implicit.theta.q))
-    pc(rd(direct.theta.R, implicit.theta.R))
-    pc(rd(direct.theta.r, implicit.theta.r))
+    # pc(rd(direct.x0, implicit.x0))
+    # pc(rd(direct.theta.A, implicit.theta.A))
+    # pc(rd(direct.theta.B, implicit.theta.B))
+    # pc(rd(direct.theta.Q, implicit.theta.Q))
+    # pc(rd(direct.theta.Qf, implicit.theta.Qf))
+    # pc(rd(direct.theta.q, implicit.theta.q))
+    # pc(rd(direct.theta.R, implicit.theta.R))
+    # pc(rd(direct.theta.r, implicit.theta.r))
 
     # findiff = idoc.utils.finite_difference_grad(direct_loss, params)
     # print("Implicit v Finite Difference")

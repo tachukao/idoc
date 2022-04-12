@@ -21,8 +21,8 @@ def init_theta(key, state_dim, control_dim) -> Params:
     Q = jnp.eye(state_dim)
     q = jnp.ones(state_dim) * 0.01
     Qf = jnp.eye(state_dim)
-    R = jnp.eye(control_dim) * 0.01
-    r = jnp.ones(control_dim) * 0.01
+    R = jnp.eye(control_dim)
+    r = jnp.ones(control_dim)
     key, subkey = jax.random.split(key)
     A = idoc.utils.init_stable(subkey, state_dim)
     key, subkey = jax.random.split(key)
@@ -33,16 +33,20 @@ def init_theta(key, state_dim, control_dim) -> Params:
 def init_ilqr_problem(
     state_dim: int, control_dim: int, horizon: int
 ) -> idoc.ilqr.Problem:
-    phi = lambda x : jnp.tanh(x)
+    phi = lambda x: jnp.tanh(x)
+
     def dynamics(_, x, u, theta):
         return phi(theta.A @ x) + theta.B @ u + 0.5
 
     def cost(_, x, u, theta):
+        n = x.shape[-1]
+        m = u.shape[-1]
         lQ = 0.5 * jnp.dot(jnp.dot(theta.Q, x), x)
         lq = jnp.dot(theta.q, x)
         lR = 1e-4 * jnp.dot(jnp.dot(theta.R, u), u)
+        lM = -1e-4 * jnp.dot(jnp.dot(jnp.ones((n, m)), u), x)
         lr = 1e-4 * jnp.dot(theta.r, u)
-        return lQ + lq + lR + lr
+        return lQ + lq + lR + lr + lM
 
     def costf(xf, theta):
         return 0.5 * jnp.dot(jnp.dot(theta.Qf, xf), xf)
@@ -69,23 +73,29 @@ def init_params(key, state_dim, control_dim) -> idoc.ilqr.Params:
 def test_ilqr():
     jax.config.update("jax_enable_x64", True)
     # problem dimensions
-    state_dim, control_dim, T, iterations = 2, 2, 5, 15
+    state_dim, control_dim, T, maxiter = 2, 2, 5, 30
     # random key
     key = jax.random.PRNGKey(42)
     # initialize ilqr
     ilqr_problem = init_ilqr_problem(state_dim, control_dim, T)
     # initialize solvers
-    solver = idoc.ilqr.build(ilqr_problem, iterations)
+    solver = idoc.ilqr.build(
+        ilqr_problem,
+        thres=1e-8,
+        maxiter=maxiter,
+        line_search=idoc.make_line_search(),
+    )
     # initialize parameters
     params = init_params(key, state_dim, control_dim)
     # initialize state
     Uinit = jnp.zeros((T, control_dim))
-    Xinit = idoc.ilqr.simulate(ilqr_problem, Uinit, params)
+    Xinit, _ = idoc.ilqr.simulate(ilqr_problem, Uinit, params)
     sinit = idoc.typs.State(X=Xinit, U=Uinit, Nu=jnp.zeros_like(Xinit))
+
     # check that both solvers give the same solution
     def check_solution():
         for k, solve in [("direct", solver.direct), ("implicit", solver.implicit)]:
-            #print(k)
+            # print(k)
             s = solve(sinit, params)
             idoc.utils.check_kkt(solver.kkt, s, params)
 
@@ -106,34 +116,35 @@ def test_ilqr():
     # check along one random direction
     check_grads(implicit_loss, (params,), 1, modes=("rev",))
 
-    direct = jax.grad(direct_loss)(params)
-    implicit = jax.grad(implicit_loss)(params)
+    # LONG Checks
 
-    pc = idoc.utils.print_and_check
-    rd = idoc.utils.relative_difference
+    # direct = jax.grad(direct_loss)(params)
+    # implicit = jax.grad(implicit_loss)(params)
 
+    # pc = idoc.utils.print_and_check
+    # rd = idoc.utils.relative_difference
 
-    print("Direct v implicit")
+    # print("Direct v implicit")
 
-    pc(rd(direct.x0, implicit.x0))
-    pc(rd(direct.theta.A, implicit.theta.A))
-    pc(rd(direct.theta.B, implicit.theta.B))
-    pc(rd(direct.theta.Q, implicit.theta.Q))
-    pc(rd(direct.theta.Qf, implicit.theta.Qf))
-    pc(rd(direct.theta.q, implicit.theta.q))
-    pc(rd(direct.theta.R, implicit.theta.R))
-    pc(rd(direct.theta.r, implicit.theta.r))
+    # pc(rd(direct.x0, implicit.x0))
+    # pc(rd(direct.theta.A, implicit.theta.A))
+    # pc(rd(direct.theta.B, implicit.theta.B))
+    # pc(rd(direct.theta.Q, implicit.theta.Q))
+    # pc(rd(direct.theta.Qf, implicit.theta.Qf))
+    # pc(rd(direct.theta.q, implicit.theta.q))
+    # pc(rd(direct.theta.R, implicit.theta.R))
+    # pc(rd(direct.theta.r, implicit.theta.r))
 
-    # findiff = idoc.utils.finite_difference_grad(direct_loss, params)
-    # print("Implicit v Finite Difference")
-    # pc(rd(findiff.x0, implicit.x0))
-    # pc(rd(findiff.theta.A, implicit.theta.A))
-    # pc(rd(findiff.theta.B, implicit.theta.B))
-    # pc(rd(findiff.theta.Q, implicit.theta.Q))
-    # pc(rd(findiff.theta.Qf, implicit.theta.Qf))
-    # pc(rd(findiff.theta.q, implicit.theta.q))
-    # pc(rd(findiff.theta.R, implicit.theta.R))
-    # pc(rd(findiff.theta.r, implicit.theta.r))
+    # # findiff = idoc.utils.finite_difference_grad(direct_loss, params)
+    # # print("Implicit v Finite Difference")
+    # # pc(rd(findiff.x0, implicit.x0))
+    # # pc(rd(findiff.theta.A, implicit.theta.A))
+    # # pc(rd(findiff.theta.B, implicit.theta.B))
+    # # pc(rd(findiff.theta.Q, implicit.theta.Q))
+    # # pc(rd(findiff.theta.Qf, implicit.theta.Qf))
+    # # pc(rd(findiff.theta.q, implicit.theta.q))
+    # # pc(rd(findiff.theta.R, implicit.theta.R))
+    # # pc(rd(findiff.theta.r, implicit.theta.r))
 
 
 if __name__ == "__main__":
