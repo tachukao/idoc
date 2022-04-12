@@ -21,8 +21,8 @@ def init_theta(key, state_dim, control_dim) -> Params:
     Q = jnp.eye(state_dim)
     q = jnp.ones(state_dim) * 0.01
     Qf = jnp.eye(state_dim)
-    R = jnp.eye(control_dim) * 0.01
-    r = jnp.ones(control_dim) * 0.01
+    R = jnp.eye(control_dim)
+    r = jnp.ones(control_dim)
     key, subkey = jax.random.split(key)
     A = idoc.utils.init_stable(subkey, state_dim)
     key, subkey = jax.random.split(key)
@@ -39,11 +39,14 @@ def init_ilqr_problem(
         return phi(theta.A @ x) + theta.B @ u + 0.5
 
     def cost(_, x, u, theta):
+        n = x.shape[-1]
+        m = u.shape[-1]
         lQ = 0.5 * jnp.dot(jnp.dot(theta.Q, x), x)
         lq = jnp.dot(theta.q, x)
         lR = 1e-4 * jnp.dot(jnp.dot(theta.R, u), u)
+        lM = -1e-4 * jnp.dot(jnp.dot(jnp.ones((n, m)), u), x)
         lr = 1e-4 * jnp.dot(theta.r, u)
-        return lQ + lq + lR + lr
+        return lQ + lq + lR + lr + lM
 
     def costf(xf, theta):
         return 0.5 * jnp.dot(jnp.dot(theta.Qf, xf), xf)

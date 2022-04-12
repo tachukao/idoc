@@ -26,7 +26,7 @@ class Params(NamedTuple):
 def system_dimensions():
     n = 3
     m = 2
-    T = 5
+    T = 10
     return n, m, T
 
 
@@ -41,8 +41,8 @@ def init_theta() -> Params:
     Q = jnp.eye(state_dim)
     q = jnp.ones(state_dim) * 0.01
     Qf = jnp.eye(state_dim)
-    R = jnp.eye(control_dim) * 1e-2
-    r = jnp.ones(control_dim) * 1e-2
+    R = jnp.eye(control_dim)
+    r = jnp.ones(control_dim)
     key, subkey = jax.random.split(key)
     A = idoc.utils.init_stable(subkey, state_dim)
     key, subkey = jax.random.split(key)
@@ -61,10 +61,10 @@ def init_ilqr_problem(state_dim: int, control_dim: int, horizon: int) -> bilqr.P
         m = u.shape[-1]
         lQ = jnp.dot(jnp.dot(theta.Q, x), x)
         lq = jnp.dot(theta.q, x)
-        lR = 1e-4 * jnp.dot(jnp.dot(theta.R, u), u)
-        lm = -1e-4 * jnp.dot(jnp.dot(jnp.ones((n, m)), u), x)
-        lr = 1e-4 * jnp.dot(theta.r, u)
-        return lQ + lq + lR + lr  + lm
+        lR = 1e-6 * jnp.dot(jnp.dot(theta.R, u), u)
+        lM = -1e-4 * jnp.dot(jnp.dot(jnp.ones((n, m)), u), x)
+        lr = 1e-6 * jnp.dot(theta.r, u)
+        return lQ + lq + lR + lr + lM
 
     def costf(xf, theta):
         return 0.5 * jnp.dot(jnp.dot(theta.Qf, xf), xf)
