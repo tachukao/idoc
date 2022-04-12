@@ -169,10 +169,11 @@ def build(
             return new_val
 
         U = init.U
+        _, c_old = simulate(cs, U, params)
         X, U, c, _ = jaxopt.loop.while_loop(
             lambda v: v[-1],
             loop,
-            (init.X, init.U, 1e9, True),
+            (init.X, init.U, c_old, True),
             maxiter=maxiter,
             unroll=unroll,
             jit=jit,
