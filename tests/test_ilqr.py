@@ -47,7 +47,7 @@ def init_ilqr_problem(
         lR = 1e-4 * jnp.dot(jnp.dot(theta.R, u), u)
         lM = -1e-4 * jnp.dot(jnp.dot(jnp.ones((n, m)), u), x)
         lr = 1e-4 * jnp.dot(theta.r, u)
-        return lQ + lq + lR + lr + lM + 0.1*jnp.sum(x*jnp.log(x))
+        return lQ + lq + lR + lr + lM
 
     def costf(xf, theta):
         return 0.5 * jnp.dot(jnp.dot(theta.Qf, xf), xf)
