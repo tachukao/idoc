@@ -5,7 +5,8 @@ import jax
 from typing import NamedTuple
 import idoc
 from jax.test_util import check_grads
-
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 class Params(NamedTuple):
     Q: jnp.ndarray
@@ -46,7 +47,7 @@ def init_ilqr_problem(
         lR = 1e-4 * jnp.dot(jnp.dot(theta.R, u), u)
         lM = -1e-4 * jnp.dot(jnp.dot(jnp.ones((n, m)), u), x)
         lr = 1e-4 * jnp.dot(theta.r, u)
-        return lQ + lq + lR + lr + lM
+        return lQ + lq + lR + lr + lM + 0.1*jnp.sum(x*jnp.log(x))
 
     def costf(xf, theta):
         return 0.5 * jnp.dot(jnp.dot(theta.Qf, xf), xf)
