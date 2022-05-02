@@ -34,7 +34,7 @@ def init_theta(key, state_dim, control_dim) -> Params:
 def init_ilqr_problem(
     state_dim: int, control_dim: int, horizon: int
 ) -> idoc.ilqr.Problem:
-    phi = lambda x: jnp.tanh(x)
+    phi = lambda x: jax.nn.relu(x)
 
     def dynamics(_, x, u, theta):
         return phi(theta.A @ x) + theta.B @ u + 0.5
@@ -44,10 +44,10 @@ def init_ilqr_problem(
         m = u.shape[-1]
         lQ = 0.5 * jnp.dot(jnp.dot(theta.Q, x), x)
         lq = jnp.dot(theta.q, x)
-        lR = 1e-4 * jnp.dot(jnp.dot(theta.R, u), u)
-        lM = -1e-4 * jnp.dot(jnp.dot(jnp.ones((n, m)), u), x)
-        lr = 1e-4 * jnp.dot(theta.r, u)
-        return lQ + lq + lR + lr + lM + 0.1*jnp.sum(x*jnp.log(x))
+        lR = 1e-3 * jnp.dot(jnp.dot(theta.R, u), u)
+        lM = -1e-2 * jnp.dot(jnp.dot(jnp.ones((n, m)), u), x)
+        lr = 1e-3 * jnp.dot(theta.r, u)
+        return lQ + lq + lR + lr + lM + jnp.sum(jax.nn.log_softmax(x))
 
     def costf(xf, theta):
         return 0.5 * jnp.dot(jnp.dot(theta.Qf, xf), xf)
@@ -74,7 +74,7 @@ def init_params(key, state_dim, control_dim) -> idoc.ilqr.Params:
 def test_ilqr():
     jax.config.update("jax_enable_x64", True)
     # problem dimensions
-    state_dim, control_dim, T, maxiter = 2, 2, 5, 30
+    state_dim, control_dim, T, maxiter = 10, 3, 30, 30
     # random key
     key = jax.random.PRNGKey(42)
     # initialize ilqr
@@ -98,6 +98,7 @@ def test_ilqr():
         for k, solve in [("direct", solver.direct), ("implicit", solver.implicit)]:
             # print(k)
             s = solve(sinit, params)
+            print(s.U)
             idoc.utils.check_kkt(solver.kkt, s, params)
 
     check_solution()
