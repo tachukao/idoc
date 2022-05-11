@@ -37,7 +37,7 @@ def init_theta(key, state_dim, control_dim) -> Params:
 def init_ilqr_problem(
     state_dim: int, control_dim: int, horizon: int
 ) -> idoc.ilqr.Problem:
-    phi = lambda x: x
+    phi = lambda x: jax.nn.relu(x)
 
     def dynamics(_, x, u, theta):
         return theta.A @ phi(x) + theta.B @ u + 0.5
@@ -85,7 +85,7 @@ def test_ilqr():
     # initialize solvers
     solver = idoc.ilqr.build(
         ilqr_problem,
-        thres=1e-5,
+        thres=1e-8,
         maxiter=maxiter,
         line_search=idoc.make_line_search(verbose=True),
         unroll=True,
