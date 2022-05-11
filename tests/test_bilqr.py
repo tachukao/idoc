@@ -24,14 +24,14 @@ class Params(NamedTuple):
 
 
 def system_dimensions():
-    n = 3
-    m = 2
-    T = 10
+    n = 10
+    m = 10
+    T = 30
     return n, m, T
 
 
 dims = system_dimensions()
-batch_size = 30
+batch_size = 1
 system_key = jr.PRNGKey(10000)
 
 
@@ -51,7 +51,7 @@ def init_theta() -> Params:
 
 
 def init_ilqr_problem(state_dim: int, control_dim: int, horizon: int) -> bilqr.Problem:
-    phi = lambda x: jnp.tanh(x)
+    phi = lambda x: jax.nn.relu(x)
 
     def dynamics(_, x, u, theta):
         return phi(theta.A @ x) + theta.B @ u + 0.5
@@ -59,12 +59,13 @@ def init_ilqr_problem(state_dim: int, control_dim: int, horizon: int) -> bilqr.P
     def cost(_, x, u, theta):
         n = x.shape[-1]
         m = u.shape[-1]
-        lQ = jnp.dot(jnp.dot(theta.Q, x), x)
+        lQ = 0.5 * jnp.dot(jnp.dot(theta.Q, x), x)
         lq = jnp.dot(theta.q, x)
-        lR = 1e-6 * jnp.dot(jnp.dot(theta.R, u), u)
+        lR = 1e-4 * jnp.dot(jnp.dot(theta.R, u), u)
         lM = -1e-4 * jnp.dot(jnp.dot(jnp.ones((n, m)), u), x)
-        lr = 1e-6 * jnp.dot(theta.r, u)
-        return lQ + lq + lR + lr + lM
+        lr = 1e-4 * jnp.dot(theta.r, u)
+        x = x + 0.001
+        return lQ + lq + lR + lr + lM + jnp.sum(x*jnp.log(x*x))/batch_size
 
     def costf(xf, theta):
         return 0.5 * jnp.dot(jnp.dot(theta.Qf, xf), xf)

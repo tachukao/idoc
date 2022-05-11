@@ -11,8 +11,84 @@ import flax
 from . import lqr, typs
 import functools
 from dataclasses import dataclass
+import logging
 
 mm = jax.vmap(jnp.matmul)
+
+
+def backward(
+    p: lqr.LQR,
+    horizon: int,
+    *,
+    return_expected_change: bool = False,
+    unroll=False,
+    jit=True,
+) -> lqr.Gains:
+    """iLQR backward pass
+
+    Returns Gains used in the forward pass
+    """
+    A, B, d = p.A, p.B, p.d
+    Q, q, Qf, qf = p.Q, p.q, p.Qf, p.qf
+    R, r = p.R, p.r
+    M = p.M
+    AT = A.transpose(0, 2, 1)
+    BT = B.transpose(0, 2, 1)
+    EPS = 1e-8
+    jitter = EPS * jnp.eye(R.shape[-1])
+    symmetrize = lambda x: 0.5 * (x + x.T)
+
+    _, n, m = B.shape
+    Ks = jnp.zeros((horizon, m, n))
+    ks = jnp.zeros((horizon, m))
+
+    def loop(val):
+        state, t, _ = val
+        V, v, dC, dc, Ks, ks = state
+        Gxx = symmetrize(Q[t] + AT[t] @ V @ A[t])
+        Guu = symmetrize(R[t] + BT[t] @ V @ B[t])
+        Gxu = M[t] + AT[t] @ V @ B[t]
+        Vd = V @ d[t]
+        gx = q[t] + AT[t] @ v + AT[t] @ Vd
+        gu = r[t] + BT[t] @ v + BT[t] @ Vd
+        evals, _ = jnp.linalg.eigh(Guu)
+        min_eval = evals[0]
+        #print(f"minimum eigenvalue: {min_eval: .05f}")
+        Gtuu = Guu + jnp.maximum(0.0, EPS - min_eval) * jnp.eye(Guu.shape[0])
+        K = -jax.scipy.linalg.solve(Gtuu, Gxu.T)
+        k = -jax.scipy.linalg.solve(Gtuu, gu)
+        V = symmetrize(Gxx + Gxu @ K + K.T @ Gxu.T + K.T @ Guu @ K)
+        v = gx + Gxu @ k + K.T @ gu + K.T @ Guu @ k
+        dC = dC + 0.5 * jnp.dot(jnp.dot(Guu, k), k)
+        dc = dc + jnp.dot(gu, k)
+        Ks = jax.ops.index_update(Ks, t, K)
+        ks = jax.ops.index_update(ks, t, k)
+        val = (V, v, dC, dc, Ks, ks), t - 1, True
+        return val
+
+    initial_val = (Qf, qf, 0.0, 0.0, Ks, ks), horizon - 1, True
+
+    (_, _, dC, dc, Ks, ks), _, _ = jaxopt.loop.while_loop(
+        lambda v: v[-1],
+        loop,
+        initial_val,
+        maxiter=horizon,
+        unroll=unroll,
+        jit=jit,
+    )
+
+    gains = lqr.Gains(K=Ks, k=ks)
+    if not return_expected_change:
+        return gains
+
+    def expected_change(alpha):
+        """Expected change as predicted by quadratic model
+
+        This should be a negative number.
+        """
+        return ((alpha ** 2) * dC) + (alpha * dc)
+
+    return gains, expected_change
 
 
 @dataclass
@@ -107,7 +183,8 @@ def build(
     thres: float = 1e-8,
     line_search=None,
     unroll: bool = False,
-    jit: bool = True
+    jit: bool = True,
+    verbose: bool=False,
 ) -> typs.Solver:
     """Build iLQR solver"""
     T = cs.horizon
@@ -137,7 +214,7 @@ def build(
             return (nxhat, nl), (nxhat, uhat)
 
         inps = jnp.arange(T), gains, sX, U
-        (xf, nl), (X, U) = lax.scan(fwd, (x0, 0), inps)
+        (xf, nl), (X, U) = lax.scan(fwd, (x0, 0.), inps)
         l = nl + cs.costf(xf, theta)
         return X, U, l
 
@@ -149,31 +226,39 @@ def build(
         lqr_approx_local = make_lqr_approx(cs, params, local=True)
 
         def loop(val):
-            X_old, U_old, c_old, _ = val
+            X_old, U_old, c_old, iteration, _ = val
             p = lqr_approx_local(X_old, U_old)
-            gains, expected_change = lqr.backward(p, T, return_expected_change=True)
+            gains, expected_change = lqr.backward(
+                p, T, return_expected_change=True
+            )
 
             def f(alpha):
                 return update(X_old, U_old, gains, params, alpha=alpha)
 
             if line_search is None:
                 (nX, nU, nc) = f(1.0)
+                line_search_passes = True
             else:
-                (nX, nU, nc) = line_search(
+                (nX, nU, nc, line_search_passes) = line_search(
                     f, c_old, expected_change, unroll=unroll, jit=jit
                 )
 
             pct_change = abs((c_old - nc) / c_old)
+            if verbose:
+                print(f"[{iteration}] nc {nc:.05f} pct_change {pct_change:.09f}")
+            if not line_search_passes:
+                logging.warning("Linear search did not pass!")
             carry_on = pct_change > thres
-            new_val = nX, nU, nc, carry_on
+            new_val = nX, nU, nc, iteration + 1, carry_on
             return new_val
 
         U = init.U
         _, c_old = simulate(cs, U, params)
-        X, U, c, _ = jaxopt.loop.while_loop(
+        init_val = (init.X, init.U, c_old, 0, True)
+        X, U, c, _, _ = jaxopt.loop.while_loop(
             lambda v: v[-1],
             loop,
-            (init.X, init.U, c_old, True),
+            init_val,
             maxiter=maxiter,
             unroll=unroll,
             jit=jit,
@@ -182,7 +267,9 @@ def build(
         Nu = lqr.adjoint(X, U, p, T)
         return typs.State(X=X, U=U, Nu=Nu)
 
-    implicit_ilqr = implicit_diff.custom_root(kkt, solve=linear_solve.solve_cg)(ilqr)
+    solve = functools.partial(linear_solve.solve_cg, tol=1e-8)
+
+    implicit_ilqr = implicit_diff.custom_root(kkt, solve=solve)(ilqr)
 
     return typs.Solver(
         direct=ilqr,
