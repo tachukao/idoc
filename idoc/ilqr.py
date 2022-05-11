@@ -240,7 +240,7 @@ def build(
                 line_search_passes = True
             else:
                 (nX, nU, nc, line_search_passes) = line_search(
-                    f, c_old, expected_change, unroll=unroll, jit=jit
+                    f, (X_old, U_old, c_old), expected_change, unroll=unroll, jit=jit
                 )
 
             pct_change = abs((c_old - nc) / c_old)

@@ -60,7 +60,6 @@ class Params(NamedTuple):
     blqr: BLQR
 
 
-@jax.jit
 def batch_lqr_step(V, v, dC, dc, Q, q, R, r, M, A, B, d, delta=1e-8):
     """Single Batch LQR Step.
     Args:

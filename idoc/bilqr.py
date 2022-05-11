@@ -11,6 +11,7 @@ import flax
 from . import blqr, lqr, typs
 import functools
 from dataclasses import dataclass
+import logging
 
 mm = vmap(jnp.matmul)
 
@@ -123,10 +124,14 @@ def build(
     thres: float = 1e-8,
     line_search=None,
     unroll: bool = False,
-    jit: bool = True
+    jit: bool = True,
+    verbose:bool=False
 ) -> typs.Solver:
     """Build iLQR solver"""
     T = cs.horizon
+
+    if verbose and jit:
+        raise Exception("Verbose and jit cannot be used together.")
 
     def kkt(s: typs.State, params: Params) -> typs.State:
         p = make_lqr_approx(cs, params, local=False)(s.X, s.U)
@@ -170,7 +175,7 @@ def build(
         lqr_approx_local = make_lqr_approx(cs, params, local=True)
 
         def loop(val):
-            X_old, U_old, c_old, _ = val
+            X_old, U_old, c_old, iteration, _ = val
             p = lqr_approx_local(X_old, U_old)
             gains, expected_change = blqr.backward(p, T, return_expected_change=True)
 
@@ -180,21 +185,25 @@ def build(
             if line_search is None:
                 (nX, nU, nc) = f(1.0)
             else:
-                (nX, nU, nc) = line_search(
-                    f, c_old, expected_change, unroll=unroll, jit=jit
+                (nX, nU, nc, line_search_passes) = line_search(
+                    f, (X_old, U_old, c_old), expected_change, unroll=unroll, jit=jit
                 )
 
             pct_change = abs((c_old - nc) / c_old)
+            if verbose:
+                print(f"[{iteration}] nc {nc:.05f} pct_change {pct_change:.09f}")
+            if verbose and not line_search_passes:
+                logging.warning("Linear search did not pass!")
             carry_on = pct_change > thres
-            new_val = nX, nU, nc, carry_on
+            new_val = nX, nU, nc, iteration+1, carry_on
             return new_val
 
         U = init.U
         _, c_old = simulate(cs, U, params)
-        X, U, c, _ = jaxopt.loop.while_loop(
+        X, U, c, _, _ = jaxopt.loop.while_loop(
             lambda v: v[-1],
             loop,
-            (init.X, init.U, c_old, True),
+            (init.X, init.U, c_old, 0, True),
             maxiter=maxiter,
             unroll=unroll,
             jit=jit,

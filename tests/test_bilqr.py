@@ -26,7 +26,7 @@ class Params(NamedTuple):
 def system_dimensions():
     n = 10
     m = 10
-    T = 30
+    T = 20
     return n, m, T
 
 
@@ -61,11 +61,10 @@ def init_ilqr_problem(state_dim: int, control_dim: int, horizon: int) -> bilqr.P
         m = u.shape[-1]
         lQ = 0.5 * jnp.dot(jnp.dot(theta.Q, x), x)
         lq = jnp.dot(theta.q, x)
-        lR = 1e-4 * jnp.dot(jnp.dot(theta.R, u), u)
-        lM = -1e-4 * jnp.dot(jnp.dot(jnp.ones((n, m)), u), x)
-        lr = 1e-4 * jnp.dot(theta.r, u)
-        x = x + 0.001
-        return lQ + lq + lR + lr + lM + jnp.sum(x*jnp.log(x*x))/batch_size
+        lR = 1e-6 * jnp.dot(jnp.dot(theta.R, u), u)
+        lM = -1e-6 * jnp.dot(jnp.dot(jnp.ones((n, m)), u), x)
+        lr = 1e-6 * jnp.dot(theta.r, u)
+        return lQ + lq + lR + lr + lM
 
     def costf(xf, theta):
         return 0.5 * jnp.dot(jnp.dot(theta.Qf, xf), xf)
@@ -99,10 +98,10 @@ def test_ilqr():
     key = jax.random.PRNGKey(42)
     # initialize ilqr
     ilqr_problem = init_ilqr_problem(state_dim, control_dim, T)
-    line_search = idoc.make_line_search()
+    line_search = idoc.make_line_search(verbose=True)
     # initialize solvers
     solver = bilqr.build(
-        ilqr_problem, maxiter=maxiter, thres=1e-8, line_search=line_search
+        ilqr_problem, maxiter=maxiter, thres=1e-8, line_search=line_search, jit=False, unroll=True, verbose=True
     )
     # initialize parameters
     params = init_params(key)

@@ -50,6 +50,7 @@ def init_ilqr_problem(
         lR = 1e-4 * jnp.dot(jnp.dot(theta.R, u), u)
         lM = -1e-4 * jnp.dot(jnp.dot(jnp.ones((n, m)), u), x)
         lr = 1e-4 * jnp.dot(theta.r, u)
+        return lQ + lq + lR + lM + lr
 
     def costf(xf, theta):
         return 0.5 * jnp.dot(jnp.dot(theta.Qf, xf), xf)
@@ -76,7 +77,7 @@ def init_params(key, state_dim, control_dim) -> idoc.ilqr.Params:
 def test_ilqr():
     jax.config.update("jax_enable_x64", True)
     # problem dimensions
-    state_dim, control_dim, T, maxiter = 10, 3, 10, 30
+    state_dim, control_dim, T, maxiter = 10, 3, 30, 30
     # random key
     key = jr.PRNGKey(42)
     # initialize ilqr
