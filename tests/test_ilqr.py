@@ -109,20 +109,20 @@ def test_ilqr():
 
     check_solution()
 
-    # # check that the gradients match between two solvers
-    # def loss(s, params):
-    #     return jnp.sum(s.X ** 2) + 0.5 * jnp.sum(s.U ** 2)
+    # check that the gradients match between two solvers
+    def loss(s, params):
+        return jnp.sum(s.X ** 2) + 0.5 * jnp.sum(s.U ** 2)
 
-    # def direct_loss(params):
-    #     s = solver.direct(sinit, params)
-    #     return loss(s, params)
+    def direct_loss(params):
+        s = solver.direct(sinit, params)
+        return loss(s, params)
 
-    # def implicit_loss(params):
-    #     s = solver.implicit(sinit, params)
-    #     return loss(s, params)
+    def implicit_loss(params):
+        s = solver.implicit(sinit, params)
+        return loss(s, params)
 
-    # # check along one random direction
-    # check_grads(implicit_loss, (params,), 1, modes=("rev",))
+    # check along one random direction
+    check_grads(implicit_loss, (params,), 1, modes=("rev",))
 
     # LONG Checks
 
