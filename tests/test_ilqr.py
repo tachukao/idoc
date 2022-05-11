@@ -1,12 +1,15 @@
 """Test for iLQR solver"""
 
 import jax.numpy as jnp
+import jax.random as jr
 import jax
 from typing import NamedTuple
 import idoc
 from jax.test_util import check_grads
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+
 
 class Params(NamedTuple):
     Q: jnp.ndarray
@@ -24,20 +27,20 @@ def init_theta(key, state_dim, control_dim) -> Params:
     Qf = jnp.eye(state_dim)
     R = jnp.eye(control_dim)
     r = jnp.ones(control_dim)
-    key, subkey = jax.random.split(key)
+    key, subkey = jr.split(key)
     A = idoc.utils.init_stable(subkey, state_dim)
-    key, subkey = jax.random.split(key)
-    B = jax.random.normal(subkey, (state_dim, control_dim))
+    key, subkey = jr.split(key)
+    B = jr.normal(subkey, (state_dim, control_dim))
     return Params(Q=Q, q=q, Qf=Qf, R=R, r=r, A=A, B=B)
 
 
 def init_ilqr_problem(
     state_dim: int, control_dim: int, horizon: int
 ) -> idoc.ilqr.Problem:
-    phi = lambda x: jax.nn.relu(x)
+    phi = lambda x: x
 
     def dynamics(_, x, u, theta):
-        return phi(theta.A @ x) + theta.B @ u + 0.5
+        return theta.A @ phi(x) + theta.B @ u + 0.5
 
     def cost(_, x, u, theta):
         n = x.shape[-1]
@@ -47,7 +50,7 @@ def init_ilqr_problem(
         lR = 1e-3 * jnp.dot(jnp.dot(theta.R, u), u)
         lM = -1e-2 * jnp.dot(jnp.dot(jnp.ones((n, m)), u), x)
         lr = 1e-3 * jnp.dot(theta.r, u)
-        return lQ + lq + lR + lr + lM + jnp.sum(jax.nn.log_softmax(x))
+        return lQ + lq + lR + lr + lM 
 
     def costf(xf, theta):
         return 0.5 * jnp.dot(jnp.dot(theta.Qf, xf), xf)
@@ -58,15 +61,15 @@ def init_ilqr_problem(
         dynamics=dynamics,
         horizon=horizon,
         state_dim=state_dim,
-        control_dim=control_dim,
+        control_dim=control_dim
     )
 
 
 def init_params(key, state_dim, control_dim) -> idoc.ilqr.Params:
     """Initialize random parameters."""
-    key, subkey = jax.random.split(key)
-    x0 = jax.random.normal(subkey, (state_dim,))
-    key, subkey = jax.random.split(key)
+    key, subkey = jr.split(key)
+    x0 = jr.normal(subkey, (state_dim,))
+    key, subkey = jr.split(key)
     theta = init_theta(subkey, state_dim, control_dim)
     return idoc.ilqr.Params(x0, theta=theta)
 
@@ -74,17 +77,20 @@ def init_params(key, state_dim, control_dim) -> idoc.ilqr.Params:
 def test_ilqr():
     jax.config.update("jax_enable_x64", True)
     # problem dimensions
-    state_dim, control_dim, T, maxiter = 10, 3, 30, 30
+    state_dim, control_dim, T, maxiter = 10, 3, 10, 30
     # random key
-    key = jax.random.PRNGKey(42)
+    key = jr.PRNGKey(42)
     # initialize ilqr
     ilqr_problem = init_ilqr_problem(state_dim, control_dim, T)
     # initialize solvers
     solver = idoc.ilqr.build(
         ilqr_problem,
-        thres=1e-8,
+        thres=1e-5,
         maxiter=maxiter,
-        line_search=idoc.make_line_search(),
+        line_search=idoc.make_line_search(verbose=True),
+        unroll=True,
+        jit=False,
+        verbose=True
     )
     # initialize parameters
     params = init_params(key, state_dim, control_dim)
@@ -98,25 +104,25 @@ def test_ilqr():
         for k, solve in [("direct", solver.direct), ("implicit", solver.implicit)]:
             # print(k)
             s = solve(sinit, params)
-            print(s.U)
+            # print(s.U)
             idoc.utils.check_kkt(solver.kkt, s, params)
 
     check_solution()
 
-    # check that the gradients match between two solvers
-    def loss(s, params):
-        return 1.0 * jnp.sum(s.X ** 2) + 0.5 * jnp.sum(s.U ** 2)
+    # # check that the gradients match between two solvers
+    # def loss(s, params):
+    #     return jnp.sum(s.X ** 2) + 0.5 * jnp.sum(s.U ** 2)
 
-    def direct_loss(params):
-        s = solver.direct(sinit, params)
-        return loss(s, params)
+    # def direct_loss(params):
+    #     s = solver.direct(sinit, params)
+    #     return loss(s, params)
 
-    def implicit_loss(params):
-        s = solver.implicit(sinit, params)
-        return loss(s, params)
+    # def implicit_loss(params):
+    #     s = solver.implicit(sinit, params)
+    #     return loss(s, params)
 
-    # check along one random direction
-    check_grads(implicit_loss, (params,), 1, modes=("rev",))
+    # # check along one random direction
+    # check_grads(implicit_loss, (params,), 1, modes=("rev",))
 
     # LONG Checks
 
