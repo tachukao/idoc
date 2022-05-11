@@ -10,8 +10,9 @@ from typing import Callable, Any, Optional, NamedTuple
 import flax
 from . import lqr, typs
 import functools
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import logging
+from . import implicit_diff as my_implicit_diff
 
 mm = jax.vmap(jnp.matmul)
 
@@ -267,9 +268,21 @@ def build(
         Nu = lqr.adjoint(X, U, p, T)
         return typs.State(X=X, U=U, Nu=Nu)
 
-    solve = functools.partial(linear_solve.solve_cg, tol=1e-8)
+    def custom_solve(s, b, params):
+        p = make_lqr_approx(cs, params, local=False)(s.X, s.U)
+        q, r, d = b.X, b.U, b.Nu
+        r = jax.ops.index_update(r, 0, r[0] + p.M[0].T @ params.x0)
+        d = jax.ops.index_update(d, 0, d[0] + p.A[0] @ params.x0)
+        p = p._replace(r=r, q=q, d=d)
+        gains = lqr.backward(p, T)
+        x0 = jnp.zeros(q.shape[1:]) # remove time dimension
+        X, U = lqr.forward(p, x0, gains)
+        Nu = lqr.adjoint(X, U, p, T)
+        return typs.State(X=-X, U=-U, Nu=-Nu)
 
-    implicit_ilqr = implicit_diff.custom_root(kkt, solve=solve)(ilqr)
+    #solve = functools.partial(linear_solve.solve_cg, tol=1e-8)
+    #implicit_ilqr = implicit_diff.custom_root(kkt, solve=solve)(ilqr)
+    implicit_ilqr = my_implicit_diff.custom_root(kkt, solve=custom_solve)(ilqr)
 
     return typs.Solver(
         direct=ilqr,
